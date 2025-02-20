@@ -11,19 +11,13 @@
       pkgs = import nixpkgs {
         inherit system;
       };
-      libPath = with pkgs;
-        lib.makeLibraryPath [
-          openssl
-        ];
     in
       pkgs.mkShell {
         buildInputs = [
-          pkgs.openssl
           pkgs.pkg-config
         ];
 
         RUST_LOG = "debug";
-        LD_LIBRARY_PATH = libPath;
 
         shellHook = ''
           exec fish
