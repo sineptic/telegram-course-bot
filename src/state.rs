@@ -1,3 +1,5 @@
+use teloxide::types::MessageId;
+
 use super::*;
 
 #[derive(Clone, Default)]
@@ -8,6 +10,7 @@ pub enum State {
         interactions: Vec<TelegramInteraction>,
         current: usize,
         current_id: u64,
+        current_message: Option<MessageId>,
         answers: Vec<String>,
     },
 }

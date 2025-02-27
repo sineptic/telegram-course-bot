@@ -1,3 +1,5 @@
+use teloxide::{dispatching::dialogue::GetChatId, types::MessageId};
+
 use super::{
     commands::Command,
     inline_keyboard::make_keyboard,
@@ -15,15 +17,16 @@ pub async fn message_handler(bot: Bot, dialogue: MyDialogue, msg: Message, me: M
             }
             Ok(Command::Start) => {
                 let interactions = vec![
-                    TelegramInteraction::Text("start".into()),
-                    TelegramInteraction::OneOf(vec!["a".into(), "b".into()]),
+                    TelegramInteraction::Text("2 * 3 = ".into()),
+                    TelegramInteraction::OneOf(vec![5.to_string(), 6.to_string(), 7.to_string()]),
+                    TelegramInteraction::Text("7 - 5 = ".into()),
                     TelegramInteraction::UserInput,
-                    TelegramInteraction::Text("end".into()),
                 ];
                 let event = State::UserEvent {
                     interactions: interactions.clone(),
                     current: 0,
                     current_id: rand::random(),
+                    current_message: None,
                     answers: Vec::new(),
                 };
                 dialogue.update(event).await?;
@@ -35,24 +38,30 @@ pub async fn message_handler(bot: Bot, dialogue: MyDialogue, msg: Message, me: M
                     interactions,
                     mut current,
                     mut current_id,
+                    current_message,
                     mut answers,
                 } => match &interactions[current] {
                     TelegramInteraction::UserInput => {
-                        answers.push(msg.text().unwrap().to_owned());
+                        let user_input = msg.text().unwrap().to_owned();
+
+                        bot.delete_message(msg.chat_id().unwrap(), current_message.unwrap())
+                            .await?;
+
+                        answers.push(user_input);
                         current += 1;
                         current_id = rand::random();
                         let event = State::UserEvent {
                             interactions,
                             current,
                             current_id,
+                            current_message,
                             answers,
                         };
                         dialogue.update(event).await?;
                         progress_on_user_event(bot, dialogue, current).await?;
                     }
                     _ => {
-                        log::error!("{:#?}", interactions[current]);
-                        bot.send_message(msg.chat.id, "Invalid interaction").await?;
+                        bot.send_message(msg.chat.id, "Unexpected input").await?;
                     }
                 },
                 State::General => {
@@ -68,17 +77,16 @@ pub async fn message_handler(bot: Bot, dialogue: MyDialogue, msg: Message, me: M
 pub async fn callback_handler(
     bot: Bot,
     dialogue: MyDialogue,
-    (interactions, current, current_id, mut answers): (
+    (interactions, mut current, current_id, current_message, mut answers): (
         Vec<TelegramInteraction>,
         usize,
         u64,
+        Option<MessageId>,
         Vec<String>,
     ),
     q: CallbackQuery,
 ) -> HandleResult {
     if let Some(ref response) = q.data {
-        let _text = format!("You chose: {response}");
-
         bot.answer_callback_query(&q.id).await?;
 
         let response = response.split_whitespace().collect::<Vec<_>>();
@@ -88,12 +96,28 @@ pub async fn callback_handler(
             return Ok(());
         }
 
+        let TelegramInteraction::OneOf(current_choice) = &interactions[current] else {
+            todo!();
+        };
+
+        bot.edit_message_text(
+            q.chat_id().unwrap(),
+            current_message.unwrap(),
+            format!(
+                "You choose: {}",
+                current_choice[response[1].parse::<usize>().unwrap()]
+            ),
+        )
+        .await?;
+
         answers.push(response[1].to_string());
+        current += 1;
         dialogue
             .update(State::UserEvent {
                 interactions,
                 current,
                 current_id,
+                current_message,
                 answers,
             })
             .await?;
@@ -115,6 +139,7 @@ pub async fn progress_on_user_event(
         interactions,
         current: _,
         current_id: _,
+        current_message: _,
         mut answers,
     } = dialogue.get().await?.unwrap()
     else {
@@ -123,24 +148,37 @@ pub async fn progress_on_user_event(
     loop {
         let len = interactions.len();
         if current >= len {
-            bot.send_message(dialogue.chat_id(), format!("Your answers:\n{answers:#?}",))
-                .await?;
+            bot.send_message(
+                dialogue.chat_id(),
+                format!(
+                    "Your answers:\n{answers:#?}
+correct_answers: [
+    \"\",
+    \"1\",
+    \"\",
+    \"2\",
+]",
+                ),
+            )
+            .await?;
+            log::error!("Handling task end not yet implemented");
             dialogue.exit().await?;
             break;
         }
         match &interactions[current] {
             TelegramInteraction::OneOf(vec) => {
                 let current_id = rand::random();
-                bot.send_message(dialogue.chat_id(), "ㅤ")
+                let message = bot
+                    .send_message(dialogue.chat_id(), "ㅤ")
                     .reply_markup(make_keyboard(vec, current_id))
                     .await?;
-                current += 1;
 
                 dialogue
                     .update(State::UserEvent {
                         interactions,
                         current,
                         current_id,
+                        current_message: Some(message.id),
                         answers,
                     })
                     .await?;
@@ -152,17 +190,19 @@ pub async fn progress_on_user_event(
                 answers.push(String::new());
             }
             TelegramInteraction::UserInput => {
-                bot.send_message(dialogue.chat_id(), "Please enter your input")
+                let message = bot
+                    .send_message(dialogue.chat_id(), "Please enter your input")
                     .await?;
+
                 dialogue
                     .update(State::UserEvent {
                         interactions,
                         current,
                         current_id: rand::random(),
+                        current_message: Some(message.id),
                         answers,
                     })
                     .await?;
-                current += 1;
                 break;
             }
         }

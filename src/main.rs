@@ -39,6 +39,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         interactions,
                         current,
                         current_id,
+                        current_message,
                         answers
                     }]
                     .endpoint(callback_handler),
