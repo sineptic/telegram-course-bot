@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use teloxide::types::MessageId;
+use tokio::sync::{Mutex, oneshot};
 
 use super::*;
 
@@ -12,6 +15,7 @@ pub enum State {
         current_id: u64,
         current_message: Option<MessageId>,
         answers: Vec<String>,
+        channel: Arc<Mutex<Option<oneshot::Sender<Vec<String>>>>>,
     },
 }
 

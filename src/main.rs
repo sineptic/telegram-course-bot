@@ -40,7 +40,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         current,
                         current_id,
                         current_message,
-                        answers
+                        answers,
+                        channel
                     }]
                     .endpoint(callback_handler),
                 )

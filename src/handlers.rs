@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use teloxide::{dispatching::dialogue::GetChatId, types::MessageId};
+use tokio::sync::{Mutex, oneshot};
 
 use super::{
     commands::Command,
@@ -22,14 +25,20 @@ pub async fn message_handler(bot: Bot, dialogue: MyDialogue, msg: Message, me: M
                     TelegramInteraction::Text("7 - 5 = ".into()),
                     TelegramInteraction::UserInput,
                 ];
+                let (sender, receiver) = oneshot::channel();
                 let event = State::UserEvent {
                     interactions: interactions.clone(),
                     current: 0,
                     current_id: rand::random(),
                     current_message: None,
                     answers: Vec::new(),
+                    channel: Arc::new(Mutex::new(Some(sender))),
                 };
                 dialogue.update(event).await?;
+                tokio::spawn(async move {
+                    let result = receiver.await.unwrap();
+                    log::info!("Result: {:?}", result);
+                });
                 progress_on_user_event(bot, dialogue, 0).await?;
             }
 
@@ -40,6 +49,7 @@ pub async fn message_handler(bot: Bot, dialogue: MyDialogue, msg: Message, me: M
                     mut current_id,
                     current_message,
                     mut answers,
+                    channel,
                 } => match &interactions[current] {
                     TelegramInteraction::UserInput => {
                         let user_input = msg.text().unwrap().to_owned();
@@ -56,6 +66,7 @@ pub async fn message_handler(bot: Bot, dialogue: MyDialogue, msg: Message, me: M
                             current_id,
                             current_message,
                             answers,
+                            channel,
                         };
                         dialogue.update(event).await?;
                         progress_on_user_event(bot, dialogue, current).await?;
@@ -74,15 +85,17 @@ pub async fn message_handler(bot: Bot, dialogue: MyDialogue, msg: Message, me: M
     Ok(())
 }
 
+#[allow(clippy::type_complexity)]
 pub async fn callback_handler(
     bot: Bot,
     dialogue: MyDialogue,
-    (interactions, mut current, current_id, current_message, mut answers): (
+    (interactions, mut current, current_id, current_message, mut answers, channel): (
         Vec<TelegramInteraction>,
         usize,
         u64,
         Option<MessageId>,
         Vec<String>,
+        Arc<Mutex<Option<oneshot::Sender<Vec<String>>>>>,
     ),
     q: CallbackQuery,
 ) -> HandleResult {
@@ -119,6 +132,7 @@ pub async fn callback_handler(
                 current_id,
                 current_message,
                 answers,
+                channel,
             })
             .await?;
 
@@ -141,6 +155,7 @@ pub async fn progress_on_user_event(
         current_id: _,
         current_message: _,
         mut answers,
+        channel,
     } = dialogue.get().await?.unwrap()
     else {
         panic!("Unexpected state");
@@ -148,20 +163,10 @@ pub async fn progress_on_user_event(
     loop {
         let len = interactions.len();
         if current >= len {
-            bot.send_message(
-                dialogue.chat_id(),
-                format!(
-                    "Your answers:\n{answers:#?}
-correct_answers: [
-    \"\",
-    \"1\",
-    \"\",
-    \"2\",
-]",
-                ),
-            )
-            .await?;
-            log::error!("Handling task end not yet implemented");
+            let Some(channel) = channel.lock().await.take() else {
+                todo!("Unexpected state");
+            };
+            channel.send(answers).unwrap();
             dialogue.exit().await?;
             break;
         }
@@ -180,6 +185,7 @@ correct_answers: [
                         current_id,
                         current_message: Some(message.id),
                         answers,
+                        channel,
                     })
                     .await?;
                 break;
@@ -201,6 +207,7 @@ correct_answers: [
                         current_id: rand::random(),
                         current_message: Some(message.id),
                         answers,
+                        channel,
                     })
                     .await?;
                 break;
