@@ -18,5 +18,3 @@ pub enum State {
         channel: Arc<Mutex<Option<oneshot::Sender<Vec<String>>>>>,
     },
 }
-
-pub type MyDialogue = Dialogue<State, InMemStorage<State>>;
