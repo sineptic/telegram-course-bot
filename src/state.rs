@@ -6,7 +6,7 @@ use super::*;
 #[derive(Default)]
 pub enum State {
     #[default]
-    General,
+    Idle,
     UserEvent {
         interactions: Vec<TelegramInteraction>,
         current: usize,

@@ -76,7 +76,7 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me) -> HandleResult {
                     bot.send_message(msg.chat.id, "Unexpected input").await?;
                 }
             },
-            State::General => {
+            State::Idle => {
                 bot.send_message(msg.chat.id, "Command not found!").await?;
             }
         },
@@ -175,7 +175,7 @@ pub async fn progress_on_user_event(
         let len = interactions.len();
         if *current >= len {
             channel.take().unwrap().send(answers.clone()).unwrap();
-            *state = State::General;
+            *state = State::Idle;
             break;
         }
         match &interactions[*current] {
