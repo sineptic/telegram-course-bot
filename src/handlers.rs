@@ -1,7 +1,5 @@
-use std::sync::Arc;
-
 use teloxide::dispatching::dialogue::GetChatId;
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::oneshot;
 
 use super::{commands::Command, inline_keyboard::make_keyboard, state::State, *};
 pub type HandleResult = Result<(), Box<dyn Error + Send + Sync>>;
@@ -44,7 +42,7 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me) -> HandleResult {
                 current_id: rand::random(),
                 current_message: None,
                 answers: Vec::new(),
-                channel: Arc::new(Mutex::new(Some(sender))),
+                channel: Some(sender),
             };
             tokio::spawn(async move {
                 let result = receiver.await.unwrap();
@@ -176,10 +174,7 @@ pub async fn progress_on_user_event(
     loop {
         let len = interactions.len();
         if *current >= len {
-            let Some(channel) = channel.lock().await.take() else {
-                todo!("Unexpected state");
-            };
-            channel.send(answers.clone()).unwrap();
+            channel.take().unwrap().send(answers.clone()).unwrap();
             *state = State::General;
             break;
         }
