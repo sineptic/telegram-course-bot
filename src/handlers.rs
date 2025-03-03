@@ -32,14 +32,15 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me) -> HandleResult {
                 TelegramInteraction::Text("7 - 5 = ".into()),
                 TelegramInteraction::UserInput,
             ];
-            let callback = async |receiver: oneshot::Receiver<Vec<String>>| {
-                let result = receiver.await.unwrap();
-                log::info!("Result: {:?}", result);
+            let callback =
+                async |user_id: UserId, result_receiver: oneshot::Receiver<Vec<String>>| {
+                    let result = result_receiver.await.unwrap();
+                    log::info!("got result for user {user_id}: {:?}", result);
 
-                log::info!("try aquire state lock");
-                let _ = STATE.lock().await;
-                log::info!("state lock acquired");
-            };
+                    log::info!("try aquire state lock");
+                    let _ = STATE.lock().await;
+                    log::info!("state lock acquired");
+                };
             set_task_for_user(bot, user_id, interactions, callback).await?;
         }
 
@@ -88,7 +89,7 @@ async fn set_task_for_user<C>(
     callback: C,
 ) -> Result<(), Box<dyn Error + Send + Sync>>
 where
-    C: AsyncFnOnce(oneshot::Receiver<Vec<String>>) -> (),
+    C: AsyncFnOnce(UserId, oneshot::Receiver<Vec<String>>) -> (),
     C::CallOnceFuture: Send + 'static,
 {
     let mut state = STATE.lock().await;
@@ -104,7 +105,7 @@ where
         channel: Some(sender),
     };
 
-    tokio::spawn(callback(receiver));
+    tokio::spawn(callback(user_id, receiver));
     progress_on_user_event(bot, user_id.into(), state).await?;
     Ok(())
 }
@@ -150,6 +151,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
 
     if response[0] != current_id.to_string() {
         log::debug!("user {user_id} answer to previous question");
+        // TODO: maybe delete this message
         bot.send_message(chat_id, "You can answer only to current question")
             .await?;
         return Ok(());
