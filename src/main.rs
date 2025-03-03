@@ -1,3 +1,5 @@
+#![feature(async_fn_traits)]
+
 use std::{collections::HashMap, error::Error, sync::LazyLock};
 
 use telegram_interactions::TelegramInteraction;

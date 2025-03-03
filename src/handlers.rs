@@ -14,9 +14,6 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me) -> HandleResult {
         return Ok(());
     };
 
-    let mut state = STATE.lock().await;
-    let state = state.entry(user_id).or_insert(State::default());
-
     let Some(text) = msg.text() else {
         bot.send_message(chat_id, "Message should contain text")
             .await?;
@@ -35,53 +32,80 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me) -> HandleResult {
                 TelegramInteraction::Text("7 - 5 = ".into()),
                 TelegramInteraction::UserInput,
             ];
-            let (sender, receiver) = oneshot::channel();
-            *state = State::UserEvent {
-                interactions: interactions.clone(),
-                current: 0,
-                current_id: rand::random(),
-                current_message: None,
-                answers: Vec::new(),
-                channel: Some(sender),
-            };
-            tokio::spawn(async move {
+            let callback = async |receiver: oneshot::Receiver<Vec<String>>| {
                 let result = receiver.await.unwrap();
                 log::info!("Result: {:?}", result);
-            });
-            progress_on_user_event(bot, chat_id, state).await?;
+
+                log::info!("try aquire state lock");
+                let _ = STATE.lock().await;
+                log::info!("state lock acquired");
+            };
+            set_task_for_user(bot, user_id, interactions, callback).await?;
         }
 
-        Err(_) => match state {
-            State::UserEvent {
-                interactions,
-                current,
-                current_id,
-                current_message,
-                answers,
-                channel: _,
-            } => match &interactions[*current] {
-                TelegramInteraction::UserInput => {
-                    let user_input = msg.text().unwrap().to_owned();
+        Err(_) => {
+            let mut state = STATE.lock().await;
+            let state = state.entry(user_id).or_insert(State::default());
+            match state {
+                State::UserEvent {
+                    interactions,
+                    current,
+                    current_id,
+                    current_message,
+                    answers,
+                    channel: _,
+                } => match &interactions[*current] {
+                    TelegramInteraction::UserInput => {
+                        let user_input = msg.text().unwrap().to_owned();
 
-                    bot.delete_message(msg.chat_id().unwrap(), current_message.unwrap())
-                        .await?;
+                        bot.delete_message(msg.chat_id().unwrap(), current_message.unwrap())
+                            .await?;
 
-                    answers.push(user_input);
-                    *current += 1;
-                    *current_id = rand::random();
+                        answers.push(user_input);
+                        *current += 1;
+                        *current_id = rand::random();
 
-                    progress_on_user_event(bot, chat_id, state).await?;
+                        progress_on_user_event(bot, chat_id, state).await?;
+                    }
+                    _ => {
+                        bot.send_message(msg.chat.id, "Unexpected input").await?;
+                    }
+                },
+                State::Idle => {
+                    bot.send_message(msg.chat.id, "Command not found!").await?;
                 }
-                _ => {
-                    bot.send_message(msg.chat.id, "Unexpected input").await?;
-                }
-            },
-            State::Idle => {
-                bot.send_message(msg.chat.id, "Command not found!").await?;
             }
-        },
+        }
     }
 
+    Ok(())
+}
+
+async fn set_task_for_user<C>(
+    bot: Bot,
+    user_id: UserId,
+    interactions: Vec<TelegramInteraction>,
+    callback: C,
+) -> Result<(), Box<dyn Error + Send + Sync>>
+where
+    C: AsyncFnOnce(oneshot::Receiver<Vec<String>>) -> (),
+    C::CallOnceFuture: Send + 'static,
+{
+    let mut state = STATE.lock().await;
+    let state = state.entry(user_id).or_insert(State::default());
+
+    let (sender, receiver) = oneshot::channel();
+    *state = State::UserEvent {
+        interactions: interactions.clone(),
+        current: 0,
+        current_id: rand::random(),
+        current_message: None,
+        answers: Vec::new(),
+        channel: Some(sender),
+    };
+
+    tokio::spawn(callback(receiver));
+    progress_on_user_event(bot, user_id.into(), state).await?;
     Ok(())
 }
 
