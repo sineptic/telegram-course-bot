@@ -4,7 +4,7 @@ use tokio::sync::oneshot;
 use super::{commands::Command, inline_keyboard::make_keyboard, state::State, *};
 pub type HandleResult = Result<(), Box<dyn Error + Send + Sync>>;
 
-pub async fn message_handler(bot: Bot, msg: Message, me: Me) -> HandleResult {
+pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender) -> HandleResult {
     let Some(chat_id) = msg.chat_id() else {
         log::warn!("Unexpected chat ID");
         return Ok(());
@@ -26,23 +26,24 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me) -> HandleResult {
                 .await?;
         }
         Ok(Command::Start) => {
-            let interactions = vec![
-                TelegramInteraction::Image("assets/gruvbox-nix.png".into()),
-                TelegramInteraction::Text("2 * 3 = ".into()),
-                TelegramInteraction::OneOf(vec![5.to_string(), 6.to_string(), 7.to_string()]),
-                TelegramInteraction::Text("7 - 5 = ".into()),
-                TelegramInteraction::UserInput,
-            ];
-            let callback =
-                async |user_id: UserId, result_receiver: oneshot::Receiver<Vec<String>>| {
-                    let result = result_receiver.await.unwrap();
-                    log::info!("got result for user {user_id}: {:?}", result);
+            events.send(Event::StartInteraction(user_id)).await?;
+            // let interactions = vec![
+            //     TelegramInteraction::Image("assets/gruvbox-nix.png".into()),
+            //     TelegramInteraction::Text("2 * 3 = ".into()),
+            //     TelegramInteraction::OneOf(vec![5.to_string(), 6.to_string(), 7.to_string()]),
+            //     TelegramInteraction::Text("7 - 5 = ".into()),
+            //     TelegramInteraction::UserInput,
+            // ];
+            // let callback =
+            //     async |user_id: UserId, result_receiver: oneshot::Receiver<Vec<String>>| {
+            //         let result = result_receiver.await.unwrap();
+            //         log::info!("got result for user {user_id}: {:?}", result);
 
-                    log::info!("try aquire state lock");
-                    let _ = STATE.lock().await;
-                    log::info!("state lock acquired");
-                };
-            set_task_for_user(bot, user_id, interactions, callback).await?;
+            //         log::info!("try aquire state lock");
+            //         let _ = STATE.lock().await;
+            //         log::info!("state lock acquired");
+            //     };
+            // set_task_for_user(bot, user_id, interactions, callback).await?;
         }
 
         Err(_) => {
@@ -83,7 +84,7 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me) -> HandleResult {
     Ok(())
 }
 
-async fn set_task_for_user<C>(
+pub async fn set_task_for_user<C>(
     bot: Bot,
     user_id: UserId,
     interactions: Vec<TelegramInteraction>,
