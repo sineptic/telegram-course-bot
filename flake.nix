@@ -13,8 +13,8 @@
       };
     in
       pkgs.mkShell {
-        buildInputs = [
-          pkgs.pkg-config
+        buildInputs = with pkgs; [
+          gnumake
         ];
 
         RUST_LOG = "debug";

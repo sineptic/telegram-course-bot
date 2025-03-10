@@ -1,4 +1,4 @@
-use teloxide::dispatching::dialogue::GetChatId;
+use teloxide::{dispatching::dialogue::GetChatId, types::InputFile};
 use tokio::sync::oneshot;
 
 use super::{commands::Command, inline_keyboard::make_keyboard, state::State, *};
@@ -27,6 +27,7 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me) -> HandleResult {
         }
         Ok(Command::Start) => {
             let interactions = vec![
+                TelegramInteraction::Image("assets/gruvbox-nix.png".into()),
                 TelegramInteraction::Text("2 * 3 = ".into()),
                 TelegramInteraction::OneOf(vec![5.to_string(), 6.to_string(), 7.to_string()]),
                 TelegramInteraction::Text("7 - 5 = ".into()),
@@ -226,6 +227,11 @@ pub async fn progress_on_user_event(
                 *current_message = Some(message.id);
                 *current_id = rand::random();
                 break;
+            }
+            TelegramInteraction::Image(path) => {
+                bot.send_photo(chat_id, InputFile::file(path)).await?;
+                *current += 1;
+                answers.push(String::new());
             }
         }
     }
