@@ -1,23 +1,17 @@
+use std::fs;
+
 use teloxide::{Bot, prelude::Requester};
 use tokio::sync::oneshot;
 
 use super::{Event, EventReceiver};
-use crate::{interaction_types::Task, utils::ResultExt};
+use crate::{handlers::set_task_for_user, interaction_types::Task, utils::ResultExt};
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
         match event {
             Event::StartInteraction(user_id) => {
-                let task = Task::from_str(
-                    "
-                    ![assets/france-paris.jpg]
-                    What is the capital of France?
-
-                    * Paris
-                    - London
-                    - Berlin
-                ",
-                );
+                let task =
+                    Task::from_str(std::fs::read_to_string("tasks/france_capital.md").unwrap());
                 let (tx, rx) = oneshot::channel();
                 {
                     let bot = bot.clone();
@@ -36,7 +30,7 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
                         }
                     });
                 }
-                crate::handlers::set_task_for_user(bot.clone(), user_id, task.interactions(), tx)
+                set_task_for_user(bot.clone(), user_id, task.interactions(), tx)
                     .await
                     .log_err();
             }

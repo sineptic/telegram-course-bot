@@ -61,7 +61,8 @@ impl Task {
 }
 
 impl Task {
-    pub fn from_str(input: &str) -> Self {
+    pub fn from_str(input: impl AsRef<str>) -> Self {
+        let input = input.as_ref();
         assert!(!input.trim().is_empty());
         let input = input.trim();
         let lines = input.lines().map(|x| x.trim()).collect::<Vec<_>>();

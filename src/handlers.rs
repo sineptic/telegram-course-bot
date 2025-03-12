@@ -27,6 +27,9 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
                 .await?;
         }
         Ok(Command::Start) => {
+            todo!();
+        }
+        Ok(Command::Task) => {
             events.send(Event::StartInteraction(user_id)).await?;
         }
 
@@ -181,7 +184,7 @@ pub async fn progress_on_user_event(
             TelegramInteraction::OneOf(vec) => {
                 *current_id = rand::random();
                 let message = bot
-                    .send_message(chat_id, "ㅤ")
+                    .send_message(chat_id, "choose answer")
                     .reply_markup(make_keyboard(vec, *current_id))
                     .await?;
 
