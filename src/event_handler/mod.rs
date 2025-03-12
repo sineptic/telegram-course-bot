@@ -1,7 +1,5 @@
-use std::{collections::HashSet, sync::Arc};
-
 use teloxide::{Bot, prelude::Requester};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::oneshot;
 
 use super::{Event, EventReceiver};
 use crate::{
@@ -10,17 +8,9 @@ use crate::{
 };
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
-    let completed = Arc::new(Mutex::new(HashSet::new()));
     while let Some(event) = rx.recv().await {
         match event {
             Event::StartInteraction(user_id) => {
-                if completed.lock().await.contains(&user_id) {
-                    log::debug!("user {user_id} already completed");
-                    bot.send_message(user_id, "You've already completed the interaction.")
-                        .await
-                        .log_err();
-                    continue;
-                }
                 let task = Task {
                     question: vec![
                         QuestionElement::Image("assets/france-paris.jpg".into()),
@@ -32,13 +22,11 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
                 let (tx, rx) = oneshot::channel();
                 {
                     let bot = bot.clone();
-                    let completed = completed.clone();
                     let correct = task.correct_answer().to_owned();
                     tokio::spawn(async move {
                         let result: Vec<String> = rx.await.unwrap();
                         let user_answer = result.last().unwrap().clone();
                         if user_answer == correct {
-                            completed.lock().await.insert(user_id);
                             bot.send_message(user_id, "correct").await.log_err();
                             log::debug!("user {user_id} answer correctly");
                         } else {
