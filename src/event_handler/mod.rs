@@ -2,23 +2,22 @@ use teloxide::{Bot, prelude::Requester};
 use tokio::sync::oneshot;
 
 use super::{Event, EventReceiver};
-use crate::{
-    interaction_types::{QuestionElement, Task, one_of},
-    utils::ResultExt,
-};
+use crate::{interaction_types::Task, utils::ResultExt};
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
         match event {
             Event::StartInteraction(user_id) => {
-                let task = Task {
-                    question: vec![
-                        QuestionElement::Image("assets/france-paris.jpg".into()),
-                        QuestionElement::Text("What is the capital of France?".into()),
-                    ],
-                    options: one_of(["Paris", "London", "Berlin"]),
-                    answer: 0,
-                };
+                let task = Task::from_str(
+                    "
+                    ![assets/france-paris.jpg]
+                    What is the capital of France?
+
+                    * Paris
+                    - London
+                    - Berlin
+                ",
+                );
                 let (tx, rx) = oneshot::channel();
                 {
                     let bot = bot.clone();
