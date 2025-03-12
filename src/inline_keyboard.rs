@@ -5,10 +5,10 @@ where
     I: IntoIterator<Item = T>,
     T: AsRef<str>,
 {
-    InlineKeyboardMarkup::new(buttons.into_iter().enumerate().map(|(i, label)| {
+    InlineKeyboardMarkup::new(buttons.into_iter().map(|label| {
         [InlineKeyboardButton::callback(
             label.as_ref(),
-            format!("{random_id} {i}"),
+            format!("{random_id} {}", label.as_ref()),
         )]
     }))
 }

@@ -4,9 +4,12 @@ use teloxide::{Bot, prelude::Requester};
 use tokio::sync::{Mutex, oneshot};
 
 use super::{Event, EventReceiver};
-use crate::{interaction_types::TelegramInteraction, utils::ResultExt};
+use crate::{
+    interaction_types::{QuestionElement, Task, one_of},
+    utils::ResultExt,
+};
 
-pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) -> ! {
+pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
     let completed = Arc::new(Mutex::new(HashSet::new()));
     while let Some(event) = rx.recv().await {
         match event {
@@ -18,22 +21,22 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) -> ! {
                         .log_err();
                     continue;
                 }
-                let interactions = vec![
-                    TelegramInteraction::Image("assets/gruvbox-nix.png".into()),
-                    TelegramInteraction::Text("2 * 3 = ".into()),
-                    TelegramInteraction::OneOf(vec![5.to_string(), 6.to_string(), 7.to_string()]),
-                    TelegramInteraction::Text("7 - 5 = ".into()),
-                    TelegramInteraction::UserInput,
-                ];
-                let correct_answer: Vec<String> =
-                    vec!["".into(), "".into(), "1".into(), "".into(), "2".into()];
+                let task = Task {
+                    question: vec![QuestionElement::Text(
+                        "What is the capital of France?".into(),
+                    )],
+                    options: one_of(["Paris", "London", "Berlin"]),
+                    answer: 0,
+                };
                 let (tx, rx) = oneshot::channel();
                 {
                     let bot = bot.clone();
                     let completed = completed.clone();
+                    let correct = task.correct_answer().to_owned();
                     tokio::spawn(async move {
-                        let result = rx.await.unwrap();
-                        if result == correct_answer {
+                        let result: Vec<String> = rx.await.unwrap();
+                        let user_answer = result.last().unwrap().clone();
+                        if user_answer == correct {
                             completed.lock().await.insert(user_id);
                             bot.send_message(user_id, "correct").await.log_err();
                             log::debug!("user {user_id} answer correctly");
@@ -43,11 +46,10 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) -> ! {
                         }
                     });
                 }
-                crate::handlers::set_task_for_user(bot.clone(), user_id, interactions, tx)
+                crate::handlers::set_task_for_user(bot.clone(), user_id, task.interactions(), tx)
                     .await
                     .log_err();
             }
         }
     }
-    unreachable!()
 }

@@ -28,23 +28,6 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
         }
         Ok(Command::Start) => {
             events.send(Event::StartInteraction(user_id)).await?;
-            // let interactions = vec![
-            //     TelegramInteraction::Image("assets/gruvbox-nix.png".into()),
-            //     TelegramInteraction::Text("2 * 3 = ".into()),
-            //     TelegramInteraction::OneOf(vec![5.to_string(), 6.to_string(), 7.to_string()]),
-            //     TelegramInteraction::Text("7 - 5 = ".into()),
-            //     TelegramInteraction::UserInput,
-            // ];
-            // let callback =
-            //     async |user_id: UserId, result_receiver: oneshot::Receiver<Vec<String>>| {
-            //         let result = result_receiver.await.unwrap();
-            //         log::info!("got result for user {user_id}: {:?}", result);
-
-            //         log::info!("try aquire state lock");
-            //         let _ = STATE.lock().await;
-            //         log::info!("state lock acquired");
-            //     };
-            // set_task_for_user(bot, user_id, interactions, callback).await?;
         }
 
         Err(_) => {
@@ -125,7 +108,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
         return Ok(());
     };
     let State::UserEvent {
-        interactions,
+        interactions: _,
         current,
         current_id,
         current_message,
@@ -144,9 +127,11 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
         return Ok(());
     };
 
-    let response = response.split_whitespace().collect::<Vec<_>>();
+    let whitespace = response.find(' ').unwrap();
+    let (rand_id, response) = response.split_at(whitespace);
+    let response = &response[1..];
 
-    if response[0] != current_id.to_string() {
+    if rand_id != current_id.to_string() {
         log::debug!("user {user_id} answer to previous question");
         // TODO: maybe delete this message
         bot.send_message(chat_id, "You can answer only to current question")
@@ -154,26 +139,17 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
         return Ok(());
     }
 
-    let TelegramInteraction::OneOf(current_choice) = &interactions[*current] else {
-        todo!();
-    };
-
     bot.edit_message_text(
         chat_id,
         current_message.unwrap(),
-        format!(
-            "You choose: {}",
-            current_choice[response[1].parse::<usize>().unwrap()]
-        ),
+        format!("You choose: {}", response),
     )
     .await?;
 
-    answers.push(response[1].to_string());
+    answers.push(response.to_owned());
     *current += 1;
 
     progress_on_user_event(bot, chat_id, state).await?;
-
-    log::trace!("user {user_id} chose: {}", response[1]);
 
     Ok(())
 }
