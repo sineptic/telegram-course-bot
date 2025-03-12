@@ -27,10 +27,12 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
                         let result: Vec<String> = rx.await.unwrap();
                         let user_answer = result.last().unwrap().clone();
                         if user_answer == correct {
-                            bot.send_message(user_id, "correct").await.log_err();
+                            bot.send_message(user_id, "Correct!").await.log_err();
                             log::debug!("user {user_id} answer correctly");
                         } else {
-                            bot.send_message(user_id, "wrong").await.log_err();
+                            bot.send_message(user_id, format!("Wrong. Answer is {correct}"))
+                                .await
+                                .log_err();
                             log::debug!("user {user_id} answer wrong");
                         }
                     });
