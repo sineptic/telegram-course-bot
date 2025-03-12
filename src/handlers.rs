@@ -84,30 +84,24 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
     Ok(())
 }
 
-pub async fn set_task_for_user<C>(
+pub async fn set_task_for_user(
     bot: Bot,
     user_id: UserId,
     interactions: Vec<TelegramInteraction>,
-    callback: C,
-) -> Result<(), Box<dyn Error + Send + Sync>>
-where
-    C: AsyncFnOnce(UserId, oneshot::Receiver<Vec<String>>) -> (),
-    C::CallOnceFuture: Send + 'static,
-{
+    channel: oneshot::Sender<Vec<String>>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut state = STATE.lock().await;
     let state = state.entry(user_id).or_insert(State::default());
 
-    let (sender, receiver) = oneshot::channel();
     *state = State::UserEvent {
         interactions: interactions.clone(),
         current: 0,
         current_id: rand::random(),
         current_message: None,
         answers: Vec::new(),
-        channel: Some(sender),
+        channel: Some(channel),
     };
 
-    tokio::spawn(callback(user_id, receiver));
     progress_on_user_event(bot, user_id.into(), state).await?;
     Ok(())
 }

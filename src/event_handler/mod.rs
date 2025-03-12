@@ -1,8 +1,8 @@
 use std::{collections::HashSet, sync::Arc};
 
 use telegram_interactions::TelegramInteraction;
-use teloxide::{Bot, prelude::Requester, types::UserId};
-use tokio::sync::Mutex;
+use teloxide::{Bot, prelude::Requester};
+use tokio::sync::{Mutex, oneshot};
 
 use super::{Event, EventReceiver};
 use crate::utils::ResultExt;
@@ -28,23 +28,23 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) -> ! {
                 ];
                 let correct_answer: Vec<String> =
                     vec!["".into(), "".into(), "1".into(), "".into(), "2".into()];
-                let completed = completed.clone();
-                let bot_ = bot.clone();
-                let callback = async move |user_id: UserId,
-                                           result_receiver: tokio::sync::oneshot::Receiver<
-                    Vec<String>,
-                >| {
-                    let result = result_receiver.await.unwrap();
-                    if result == correct_answer {
-                        completed.lock().await.insert(user_id);
-                        bot_.send_message(user_id, "correct").await.log_err();
-                        log::debug!("user {user_id} answer correctly");
-                    } else {
-                        bot_.send_message(user_id, "wrong").await.log_err();
-                        log::debug!("user {user_id} answer wrong");
-                    }
-                };
-                crate::handlers::set_task_for_user(bot.clone(), user_id, interactions, callback)
+                let (tx, rx) = oneshot::channel();
+                {
+                    let bot = bot.clone();
+                    let completed = completed.clone();
+                    tokio::spawn(async move {
+                        let result = rx.await.unwrap();
+                        if result == correct_answer {
+                            completed.lock().await.insert(user_id);
+                            bot.send_message(user_id, "correct").await.log_err();
+                            log::debug!("user {user_id} answer correctly");
+                        } else {
+                            bot.send_message(user_id, "wrong").await.log_err();
+                            log::debug!("user {user_id} answer wrong");
+                        }
+                    });
+                }
+                crate::handlers::set_task_for_user(bot.clone(), user_id, interactions, tx)
                     .await
                     .log_err();
             }
