@@ -1,11 +1,10 @@
 use std::{collections::HashSet, sync::Arc};
 
-use telegram_interactions::TelegramInteraction;
 use teloxide::{Bot, prelude::Requester};
 use tokio::sync::{Mutex, oneshot};
 
 use super::{Event, EventReceiver};
-use crate::utils::ResultExt;
+use crate::{interaction_types::TelegramInteraction, utils::ResultExt};
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) -> ! {
     let completed = Arc::new(Mutex::new(HashSet::new()));

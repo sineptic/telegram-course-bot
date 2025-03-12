@@ -1159,14 +1159,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
-name = "s_text_input_f"
-version = "0.3.4"
-source = "git+https://github.com/sineptic/ssr2#7f47ff5bf343684df5aa5ffd82958885314a45bd"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "schannel"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1408,17 +1400,8 @@ dependencies = [
  "openssl",
  "pretty_env_logger",
  "rand",
- "telegram-interactions",
  "teloxide",
  "tokio",
-]
-
-[[package]]
-name = "telegram-interactions"
-version = "0.1.0"
-source = "git+https://github.com/sineptic/ssr2#7f47ff5bf343684df5aa5ffd82958885314a45bd"
-dependencies = [
- "s_text_input_f",
 ]
 
 [[package]]

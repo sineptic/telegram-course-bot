@@ -2,6 +2,7 @@ use teloxide::{dispatching::dialogue::GetChatId, types::InputFile};
 use tokio::sync::oneshot;
 
 use super::{commands::Command, inline_keyboard::make_keyboard, state::State, *};
+use crate::interaction_types::TelegramInteraction;
 pub type HandleResult = Result<(), Box<dyn Error + Send + Sync>>;
 
 pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender) -> HandleResult {

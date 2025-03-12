@@ -1,7 +1,7 @@
 use teloxide::types::MessageId;
 use tokio::sync::oneshot;
 
-use super::*;
+use crate::interaction_types::TelegramInteraction;
 
 #[derive(Default)]
 pub enum State {

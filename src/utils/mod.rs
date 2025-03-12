@@ -16,9 +16,14 @@ pub trait ResultExt<E> {
     type Ok;
 
     fn log_err(self) -> Option<Self::Ok>;
+
     /// Assert that this result should never be an error in development or tests.
+    #[allow(dead_code)]
     fn debug_assert_ok(self, reason: &str) -> Self;
+
+    #[allow(dead_code)]
     fn warn_on_err(self) -> Option<Self::Ok>;
+
     fn log_with_level(self, level: log::Level) -> Option<Self::Ok>;
     // fn anyhow(self) -> anyhow::Result<Self::Ok>
     // where

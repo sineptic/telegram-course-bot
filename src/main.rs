@@ -6,7 +6,6 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use telegram_interactions::TelegramInteraction;
 use teloxide::{
     payloads::SendMessageSetters,
     prelude::*,
@@ -19,6 +18,7 @@ mod commands;
 mod event_handler;
 mod handlers;
 mod inline_keyboard;
+mod interaction_types;
 mod state;
 mod utils;
 
