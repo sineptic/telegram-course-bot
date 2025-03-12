@@ -61,7 +61,7 @@ impl Task {
 }
 
 impl Task {
-    pub fn from_str(input: impl AsRef<str>) -> Self {
+    pub fn from_str(input: impl AsRef<str>, multiline_paragraphs: bool) -> Self {
         let input = input.as_ref();
         assert!(!input.trim().is_empty());
         let input = input.trim();
@@ -90,6 +90,31 @@ input
             }
             question.push(QuestionElement::from_str(lines[i]));
             i += 1;
+        }
+        if multiline_paragraphs {
+            let mut new_question = Vec::new();
+            let mut prev: Option<String> = None;
+            for question_part in question {
+                match question_part {
+                    QuestionElement::Text(text) => {
+                        if let Some(prev) = &mut prev {
+                            prev.push_str(&text);
+                        } else {
+                            prev = Some(text);
+                        }
+                    }
+                    QuestionElement::Image(_) => {
+                        if let Some(prev) = prev.take() {
+                            new_question.push(QuestionElement::Text(prev));
+                        }
+                        new_question.push(question_part);
+                    }
+                }
+            }
+            if let Some(prev) = prev.take() {
+                new_question.push(QuestionElement::Text(prev));
+            }
+            question = new_question;
         }
 
         let mut options = Vec::new();

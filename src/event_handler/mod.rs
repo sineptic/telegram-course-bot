@@ -1,5 +1,3 @@
-use std::fs;
-
 use teloxide::{Bot, prelude::Requester};
 use tokio::sync::oneshot;
 
@@ -10,8 +8,10 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
         match event {
             Event::StartInteraction(user_id) => {
-                let task =
-                    Task::from_str(std::fs::read_to_string("tasks/france_capital.md").unwrap());
+                let task = Task::from_str(
+                    std::fs::read_to_string("tasks/france_capital.md").unwrap(),
+                    true,
+                );
                 let (tx, rx) = oneshot::channel();
                 {
                     let bot = bot.clone();
