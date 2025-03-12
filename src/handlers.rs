@@ -142,7 +142,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
     bot.edit_message_text(
         chat_id,
         current_message.unwrap(),
-        format!("You choose: {}", response),
+        format!("You answer: {}", response),
     )
     .await?;
 

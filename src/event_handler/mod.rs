@@ -22,9 +22,10 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
                     continue;
                 }
                 let task = Task {
-                    question: vec![QuestionElement::Text(
-                        "What is the capital of France?".into(),
-                    )],
+                    question: vec![
+                        QuestionElement::Image("assets/france-paris.jpg".into()),
+                        QuestionElement::Text("What is the capital of France?".into()),
+                    ],
                     options: one_of(["Paris", "London", "Berlin"]),
                     answer: 0,
                 };
