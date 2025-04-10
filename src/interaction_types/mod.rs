@@ -49,6 +49,7 @@ pub struct Task {
     pub question: Vec<QuestionElement>,
     pub options: Vec<String>,
     pub answer: usize,
+    pub explanation: Option<Vec<QuestionElement>>,
 }
 impl Task {
     pub fn correct_answer(&self) -> &str {
@@ -66,14 +67,20 @@ impl Task {
 
 const ERROR_MSG: &str = "Task should follow this syntax:
 ...
-input
+'question':
+text
+![image]
 ...
-           <- empty line
-* correct option
+            <- empty line
+* correct 'option'
 - options
 ...
+            <- empty line
+'explanation'
+in format of 'question'
+...
 ";
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq)]
 pub enum TaskParseError {
     #[error("{ERROR_MSG}. Input shouldn't be empty")]
     EmptyInput,
@@ -90,8 +97,10 @@ pub enum TaskParseError {
     InvalidOptionPrefix,
     #[error("{ERROR_MSG}. Each option should contain non empty text")]
     EmptyOptionText,
-    #[error("mage should have this syntax: ![path_to_image]")]
+    #[error("Image should have this syntax: ![path_to_image]")]
     InvalidImageSyntax,
+    #[error("{ERROR_MSG}. Task should not have anything after explanation")]
+    ContentAfterExplanation,
 }
 
 impl Task {
@@ -100,29 +109,40 @@ impl Task {
         multiline_messages: bool,
     ) -> Result<Self, TaskParseError> {
         let input = input.as_ref().trim();
-        if input.is_empty() {
-            return Err(TaskParseError::EmptyInput);
-        }
+        check!(!input.is_empty(), TaskParseError::EmptyInput);
         let lines = input.lines().map(|x| x.trim());
-        let (mut question, remainder) = parse_question(lines)?;
-        if multiline_messages {
-            question = merge_messages(question);
-        }
-        let options = parse_options(remainder)?;
+
+        let (question, remainder) = parse_messages(lines, multiline_messages)?;
+        let (options, remainder) = parse_options(remainder)?;
+        let explanation = parse_explanation(multiline_messages, remainder)?;
 
         Ok(Task {
             question,
             options,
             answer: 0,
+            explanation,
         })
     }
 }
 
+fn parse_explanation<'a>(
+    multiline_messages: bool,
+    remainder: impl Iterator<Item = &'a str>,
+) -> Result<Option<Vec<QuestionElement>>, TaskParseError> {
+    let (explanation, tail) = parse_messages(remainder, multiline_messages)?;
+    check!(tail.count() == 0, TaskParseError::ContentAfterExplanation);
+    if explanation.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(explanation))
+    }
+}
+
 fn parse_options<'a>(
-    mut remainder: impl Iterator<Item = &'a str>,
-) -> Result<Vec<String>, TaskParseError> {
+    mut lines: impl Iterator<Item = &'a str>,
+) -> Result<(Vec<String>, impl Iterator<Item = &'a str>), TaskParseError> {
     let mut options = Vec::new();
-    let Some(first_line) = remainder.next() else {
+    let Some(first_line) = lines.next() else {
         return Err(TaskParseError::NoOptions);
     };
     check!(
@@ -135,7 +155,11 @@ fn parse_options<'a>(
         .trim();
     check!(!first_line.is_empty(), TaskParseError::EmptyOptionText);
     options.push(first_line.to_owned());
-    for line in remainder {
+    for line in &mut lines {
+        if line.is_empty() {
+            check!(options.len() > 1, TaskParseError::NoIncorrectOption);
+            return Ok((options, lines));
+        }
         check!(
             is_option_string_prefix_valid(line),
             TaskParseError::InvalidOptionPrefix
@@ -148,7 +172,7 @@ fn parse_options<'a>(
         options.push(line.to_owned());
     }
     check!(options.len() > 1, TaskParseError::NoIncorrectOption);
-    Ok(options)
+    Ok((options, lines))
 }
 
 fn is_option_string_prefix_valid(line: &str) -> bool {
@@ -162,6 +186,7 @@ fn merge_messages(question: Vec<QuestionElement>) -> Vec<QuestionElement> {
         match question_part {
             QuestionElement::Text(text) => {
                 if let Some(prev) = &mut prev {
+                    prev.push('\n');
                     prev.push_str(&text);
                 } else {
                     prev = Some(text);
@@ -181,15 +206,19 @@ fn merge_messages(question: Vec<QuestionElement>) -> Vec<QuestionElement> {
     new_question
 }
 
-fn parse_question<'a>(
+fn parse_messages<'a>(
     mut lines: impl Iterator<Item = &'a str>,
+    multiline_messages: bool,
 ) -> Result<(Vec<QuestionElement>, impl Iterator<Item = &'a str>), TaskParseError> {
     let mut question = Vec::new();
     for line in &mut lines {
         if line.is_empty() {
-            return Ok((question, lines));
+            break;
         }
         question.push(QuestionElement::from_str(line)?);
     }
-    Err(TaskParseError::NoOptions)
+    if multiline_messages {
+        question = merge_messages(question);
+    }
+    Ok((question, lines))
 }
