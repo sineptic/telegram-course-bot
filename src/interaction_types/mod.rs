@@ -25,19 +25,21 @@ impl From<QuestionElement> for TelegramInteraction {
     }
 }
 impl QuestionElement {
-    pub fn from_str(input: &str) -> Self {
-        assert!(input.lines().count() == 1);
-        assert!(!input.trim().is_empty());
-
+    pub fn from_str(input: &str) -> Result<Self, TaskParseError> {
         let input = input.trim();
+        assert!(input.lines().count() == 1);
+        assert!(!input.is_empty());
+
         match input.as_bytes()[0] {
             b'!' => {
-                let error_msg = "Image should have this syntax: ![path_to_image]";
-                let input = input.strip_prefix("![").expect(error_msg);
-                let input = input.strip_suffix("]").expect(error_msg);
-                QuestionElement::Image(PathBuf::from(input))
+                let path = input
+                    .strip_prefix("![")
+                    .ok_or(TaskParseError::InvalidImageSyntax)?
+                    .strip_suffix("]")
+                    .ok_or(TaskParseError::InvalidImageSyntax)?;
+                Ok(QuestionElement::Image(PathBuf::from(path)))
             }
-            _ => QuestionElement::Text(input.to_string()),
+            _ => Ok(QuestionElement::Text(input.to_string())),
         }
     }
 }
@@ -106,7 +108,6 @@ impl Task {
         if multiline_messages {
             question = merge_messages(question);
         }
-
         let options = parse_options(remainder)?;
 
         Ok(Task {
@@ -188,7 +189,7 @@ fn parse_question<'a>(
         if line.is_empty() {
             return Ok((question, lines));
         }
-        question.push(QuestionElement::from_str(line));
+        question.push(QuestionElement::from_str(line)?);
     }
     Err(TaskParseError::NoOptions)
 }
