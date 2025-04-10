@@ -1,6 +1,15 @@
 use std::panic::Location;
 
 #[macro_export]
+macro_rules! check {
+    ( $condition:expr, $error:expr ) => {
+        if !$condition {
+            return Err($error);
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! debug_panic {
     ( $($fmt_arg:tt)* ) => {
         if cfg!(debug_assertions) {

@@ -11,7 +11,8 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
                 let task = Task::from_str(
                     std::fs::read_to_string("tasks/france_capital.md").unwrap(),
                     true,
-                );
+                )
+                .unwrap();
                 let (tx, rx) = oneshot::channel();
                 {
                     let bot = bot.clone();
