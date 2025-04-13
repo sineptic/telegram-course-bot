@@ -27,7 +27,8 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
                 .await?;
         }
         Ok(Command::Start) => {
-            todo!();
+            // TODO
+            bot.send_message(chat_id, "TODO").await?;
         }
         Ok(Command::Task) => {
             events.send(Event::StartInteraction(user_id)).await?;

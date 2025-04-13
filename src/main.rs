@@ -1,5 +1,3 @@
-#![feature(async_fn_traits)]
-
 use std::{
     collections::HashMap,
     error::Error,
@@ -39,6 +37,7 @@ type EventReceiver = tokio::sync::mpsc::Receiver<Event>;
 async fn main() -> Result<(), Box<dyn Error>> {
     use handlers::*;
 
+    dotenvy::dotenv()?;
     pretty_env_logger::init();
     log::info!("Starting buttons bot...");
 
