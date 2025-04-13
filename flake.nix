@@ -1,27 +1,31 @@
 {
   inputs = {
-    nixpkgs = {
-      url = "github:NixOS/nixpkgs/nixos-24.11";
-    };
+    garnix-lib.url = "github:garnix-io/garnix-lib";
+    Rust.url = "github:garnix-io/rust-module";
   };
-  outputs = {nixpkgs, ...}: let
-    system = "x86_64-linux";
-  in {
-    devShells."${system}".default = let
-      pkgs = import nixpkgs {
-        inherit system;
-      };
-    in
-      pkgs.mkShell {
-        buildInputs = with pkgs; [
-          gnumake
-        ];
 
-        RUST_LOG = "debug";
+  nixConfig = {
+    extra-substituters = [ "https://cache.garnix.io" ];
+    extra-trusted-public-keys = [ "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g=" ];
+  };
 
-        shellHook = ''
-          exec fish
-        '';
+  outputs = inputs: inputs.garnix-lib.lib.mkModules {
+    modules = [
+      inputs.Rust.garnixModules.default
+    ];
+
+    config = { pkgs, ... }: {
+      rust = {
+        rust-project = {
+          buildDependencies = [ pkgs.gnumake ];
+          devTools = [  ];
+          runtimeDependencies = [  ];
+          src = ./.;
+          webServer = null;
+        };
       };
+
+      garnix.deployBranch = "main";
+    };
   };
 }
