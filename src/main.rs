@@ -24,8 +24,6 @@ use state::State;
 static STATE: LazyLock<Mutex<HashMap<UserId, State>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-// const SINEPTIC_TELEGRAM_ID: UserId = UserId(1120774849);
-
 #[derive(Clone, Debug)]
 enum Event {
     StartInteraction(UserId),
