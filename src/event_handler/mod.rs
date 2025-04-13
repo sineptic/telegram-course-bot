@@ -2,11 +2,7 @@ use teloxide::{Bot, prelude::Requester};
 use tokio::sync::oneshot;
 
 use super::{Event, EventReceiver};
-use crate::{
-    handlers::set_task_for_user,
-    interaction_types::{Task, TelegramInteraction},
-    utils::ResultExt,
-};
+use crate::{handlers::set_task_for_user, interaction_types::*, utils::ResultExt};
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
     let task = Task::from_str(
