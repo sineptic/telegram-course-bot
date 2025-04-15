@@ -33,10 +33,19 @@ jobs:
       - name: Build
         run: cargo build --release
       - name: Upload build artifact
-        id: upload_artifact
+        id: upload_executable
         uses: actions/upload-artifact@v4.6.1
         with:
           name: linux-x86_64
           path: target/release/telegram-bot
-      - name: Output artifact ID
-        run: echo 'Artifact ID is ${{ steps.upload_artifact.outputs.artifact-id }}'
+      - name: Upload tasks
+        id: upload_tasks
+        uses: actions/upload-artifact@v4.6.1
+        with:
+          name: tasks
+          path: tasks.md
+
+      - name: Output artifact IDs
+        run: |
+          echo 'Build artifact ID is ${{ steps.upload_executable.outputs.artifact-id }}'
+          echo 'Tasks artifact ID is ${{ steps.upload_tasks.outputs.artifact-id }}'

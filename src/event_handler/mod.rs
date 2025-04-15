@@ -6,11 +6,7 @@ use super::{Event, EventReceiver};
 use crate::{handlers::set_task_for_user, interaction_types::*, utils::ResultExt};
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
-    let card = Card::from_str(
-        std::fs::read_to_string("tasks/france_capital.md").unwrap(),
-        true,
-    )
-    .unwrap();
+    let card = Card::from_str(std::fs::read_to_string("tasks.md").unwrap(), true).unwrap();
     let mut rng = rand::rngs::StdRng::from_os_rng();
     while let Some(event) = rx.recv().await {
         match event {
