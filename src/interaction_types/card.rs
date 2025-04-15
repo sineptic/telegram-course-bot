@@ -30,6 +30,7 @@ pub enum CardParseError {
     IncorrectTaskToken,
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct Card {
     pub name: String,
