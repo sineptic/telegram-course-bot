@@ -1,6 +1,7 @@
-<name>
+# Name
 capitals
-<task 1>
+
+# Task 1
 ![assets/france-paris.jpg]
 What is the capital of France?
 
@@ -10,7 +11,8 @@ What is the capital of France?
 
 London is capital of Great Britain
 and Berlin is capital of Germany.
-<task 2>
+
+# Task 2
 What is the capital of Germany?
 
 * Berlin

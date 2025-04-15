@@ -12,13 +12,12 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
         match event {
             Event::StartInteraction(user_id) => {
                 let len = card.tasks.len();
-                let task = dbg!(
-                    card.tasks
-                        .values()
-                        .nth(rng.random_range(0..len))
-                        .unwrap()
-                        .clone()
-                );
+                let task = card
+                    .tasks
+                    .values()
+                    .nth(rng.random_range(0..len))
+                    .unwrap()
+                    .clone();
                 let (tx, rx) = oneshot::channel();
                 {
                     let bot = bot.clone();
