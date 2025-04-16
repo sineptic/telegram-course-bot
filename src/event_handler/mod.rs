@@ -9,15 +9,11 @@ use crate::{
     utils::ResultExt,
 };
 
-pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) -> ! {
+pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
     let deque = deque::from_str(&std::fs::read_to_string("cards.md").unwrap(), true).unwrap();
     let mut rng = rand::rngs::StdRng::from_os_rng();
 
-    loop {
-        let event = rx
-            .recv()
-            .await
-            .expect("Event sender shouldn't close channel");
+    while let Some(event) = rx.recv().await {
         match event {
             Event::ReviseCard { user_id, card_name } => {
                 let Some(tasks) = deque.get(&card_name.to_lowercase()) else {
@@ -42,6 +38,18 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) -> ! {
                     task.explanation.clone(),
                 ));
                 set_task_for_user(bot.clone(), user_id, task.interactions(), tx)
+                    .await
+                    .log_err();
+            }
+
+            Event::ListCards { user_id } => {
+                let names = deque
+                    .keys()
+                    .map(|x| format!("- {x}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let message = vec![TelegramInteraction::Text(format!("card names:\n{names}"))];
+                send_interactions(bot.clone(), user_id, message)
                     .await
                     .log_err();
             }

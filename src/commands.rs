@@ -21,6 +21,8 @@ pub enum Command {
     /// Revise
     #[command(parse_with = non_empty)]
     Card(String),
+    /// List all cards
+    List,
     /// Display all commands
     Help,
     #[command(hide)]

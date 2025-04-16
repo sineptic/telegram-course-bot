@@ -36,6 +36,9 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
                 .send(Event::ReviseCard { user_id, card_name })
                 .await?;
         }
+        Ok(Command::List) => {
+            events.send(Event::ListCards { user_id }).await?;
+        }
 
         Err(_) => {
             let mut state = STATE.lock().await;
