@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use rand::Rng;
+
 use super::{Task, task::TaskParseError};
 use crate::check;
 
@@ -35,6 +37,18 @@ pub enum CardParseError {
 pub struct Card {
     pub name: String,
     pub tasks: BTreeMap<u16, Task>,
+}
+
+pub fn random_task(tasks: &BTreeMap<u16, Task>, mut rng: impl Rng) -> &Task {
+    let len = tasks.len();
+    tasks.values().nth(rng.random_range(0..len)).unwrap()
+}
+
+impl Card {
+    #[allow(dead_code)]
+    pub fn random_task(&self, rng: impl Rng) -> &Task {
+        random_task(&self.tasks, rng)
+    }
 }
 
 impl Card {

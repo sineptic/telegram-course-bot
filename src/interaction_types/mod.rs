@@ -6,3 +6,5 @@ pub use telegram_interaction::TelegramInteraction;
 
 pub mod card;
 pub use card::Card;
+
+pub mod deque;

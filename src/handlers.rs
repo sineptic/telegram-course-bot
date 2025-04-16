@@ -31,8 +31,10 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
             // TODO
             bot.send_message(chat_id, "TODO").await?;
         }
-        Ok(Command::Task) => {
-            events.send(Event::StartInteraction(user_id)).await?;
+        Ok(Command::Card(card_name)) => {
+            events
+                .send(Event::ReviseCard { user_id, card_name })
+                .await?;
         }
 
         Err(_) => {
@@ -71,6 +73,18 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
     }
 
     Ok(())
+}
+
+pub async fn send_interactions(
+    bot: Bot,
+    user_id: UserId,
+    interactions: Vec<TelegramInteraction>,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async {
+        let _ = rx.await;
+    });
+    set_task_for_user(bot, user_id, interactions, tx).await
 }
 
 pub async fn set_task_for_user(
