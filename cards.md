@@ -25,3 +25,15 @@ What is the capital of Great Britain?
 * London
 - Paris
 - Berlin
+
+------
+
+# Name
+countries
+
+# Task 1
+In which country is Moscow?
+
+* Russia
+- Italy
+- Serbia

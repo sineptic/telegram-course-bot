@@ -31,7 +31,7 @@ pub fn from_str(input: &str, multiline_messages: bool) -> Result<Deque, DequePar
     let mut deque = Deque::new();
     for card in cards {
         let Card { name, tasks } = card?;
-        let prev = deque.insert(name, tasks);
+        let prev = deque.insert(name.to_lowercase(), tasks);
         check!(prev.is_none(), DequeParseError::CardNameRepeated);
     }
     check!(!deque.is_empty(), DequeParseError::NoCards);

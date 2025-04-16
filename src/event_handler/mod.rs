@@ -20,7 +20,7 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) -> ! {
             .expect("Event sender shouldn't close channel");
         match event {
             Event::ReviseCard { user_id, card_name } => {
-                let Some(tasks) = deque.get(&card_name) else {
+                let Some(tasks) = deque.get(&card_name.to_lowercase()) else {
                     send_interactions(
                         bot.clone(),
                         user_id,
