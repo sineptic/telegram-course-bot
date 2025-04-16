@@ -18,3 +18,10 @@ What is the capital of Germany?
 * Berlin
 - Paris
 - London
+
+# Task 3
+What is the capital of Great Britain?
+
+* London
+- Paris
+- Berlin
