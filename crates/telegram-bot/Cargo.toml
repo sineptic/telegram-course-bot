@@ -1,0 +1,16 @@
+[package]
+name = "telegram-bot"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+log = "0.4.25"
+pretty_env_logger = "0.5.0"
+teloxide = { version = "0.13.0", features = ["macros"] }
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"] }
+# telegram-interactions = { git = "https://github.com/sineptic/ssr2" }
+rand = "0.9.0"
+
+openssl = { version = "0.10.71", features = ["vendored"] }
+thiserror = "2.0.12"
+dotenvy = "0.15.7"
