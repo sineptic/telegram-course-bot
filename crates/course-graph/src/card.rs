@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
     rc::{Rc, Weak},
-    str::FromStr,
 };
 
 pub struct Card {
@@ -55,10 +54,3 @@ impl Card {
 }
 
 use crate::utils::*;
-
-impl FromStr for Card {
-    type Err = anyhow::Error;
-    fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        todo!("use chumsky for parsing")
-    }
-}
