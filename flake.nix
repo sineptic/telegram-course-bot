@@ -15,6 +15,7 @@
       pkgs.mkShell {
         buildInputs = with pkgs; [
           gnumake
+          graphviz
         ];
 
         RUST_LOG = "debug";
