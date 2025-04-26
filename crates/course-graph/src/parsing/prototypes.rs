@@ -4,7 +4,7 @@ use chumsky::{prelude::*, text::Char};
 type Err<'a> = extra::Err<chumsky::error::Rich<'a, char>>;
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
-pub struct CardPrototype {
+struct CardPrototype {
     name: String,
     dependencies: Vec<String>,
 }
@@ -39,7 +39,7 @@ impl CardPrototype {
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct DequePrototype {
-    cards: BTreeMap<String, Vec<String>>,
+    pub cards: BTreeMap<String, Vec<String>>,
 }
 impl DequePrototype {
     pub fn parser<'a>() -> impl Parser<'a, &'a str, DequePrototype, Err<'a>> {

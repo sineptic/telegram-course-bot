@@ -3,15 +3,18 @@ use std::{
     rc::{Rc, Weak},
 };
 
+#[allow(clippy::manual_non_exhaustive)]
 pub struct Card {
     pub name: String,
     pub dependencies: Vec<Rc<RefCell<Card>>>,
     pub dependents: Vec<Weak<RefCell<Card>>>,
+    _private: (),
 }
 
 impl Card {
-    // FIXME: check for cycles
-    pub fn new(
+    /// # Safety
+    /// Should not contain cycles
+    pub unsafe fn new(
         name: impl ToString,
         dependencies: impl IntoIterator<Item = Rc<RefCell<Card>>>,
     ) -> Rc<RefCell<Card>> {
@@ -21,6 +24,7 @@ impl Card {
             name,
             dependencies: Vec::new(),
             dependents: Vec::new(),
+            _private: (),
         }));
         dependencies.into_iter().for_each(|dep| {
             dep.borrow_mut().dependents.push(Rc::downgrade(&card));

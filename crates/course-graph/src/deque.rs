@@ -6,8 +6,10 @@ use graphviz_rust::attributes::NodeAttributes;
 use crate::card::Card;
 
 #[derive(Clone)]
+#[allow(clippy::manual_non_exhaustive)]
 pub struct Deque {
     pub top_level_cards: Vec<Rc<RefCell<Card>>>,
+    _private: (),
 }
 impl Deque {
     pub fn for_each_repeated(&self, callback: &mut impl FnMut(&Rc<RefCell<Card>>)) {
@@ -21,7 +23,9 @@ impl Deque {
             card_for_each(x, callback);
         });
     }
-    pub fn new(top_level_cards: impl IntoIterator<Item = Rc<RefCell<Card>>>) -> Self {
+    /// # Safety
+    /// Each card should have unique id
+    pub unsafe fn new(top_level_cards: impl IntoIterator<Item = Rc<RefCell<Card>>>) -> Self {
         let top_level_cards = top_level_cards.into_iter().collect::<Vec<_>>();
         top_level_cards.iter().for_each(|card| {
         let name = card.borrow().name.clone();
@@ -39,6 +43,7 @@ impl Deque {
     });
         Deque {
             top_level_cards: top_level_cards.into_iter().collect(),
+            _private: (),
         }
     }
     pub fn generate_stmts(&self) -> Vec<Stmt> {
