@@ -1,37 +1,41 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use course_graph::{
-    card::Card,
     deque::Deque,
     progress_store::{TaskProgress, TaskProgressStore, TaskProgressStoreExt},
 };
 
 fn main() {
-    let deque = unsafe {
-        let a0 = Card::new("a0", []);
-        let a1 = Card::new("a1", [a0.clone()]);
-        let a2 = Card::new("a2", [a1.clone()]);
-        let a3 = Card::new("a3", [a2.clone()]);
-        let b0 = Card::new("b0", []);
-        let b1 = Card::new("b1", [b0.clone()]);
-        let b2 = Card::new("b2", [b1.clone()]);
-        let b3 = Card::new("b3", [b2.clone()]);
-        let d0 = Card::new("d0", [a3.clone(), b3.clone()]);
-        let d1 = Card::new("d1", [d0.clone()]);
-        let d2 = Card::new("d2", [d1.clone()]);
-        let d3 = Card::new("d3", [d2.clone()]);
-        let d4 = Card::new("d4", [d3.clone()]);
-        let c0 = Card::new("c0", []);
-        let c1 = Card::new("c1", [c0.clone()]);
-        let c2 = Card::new("c2", [c1.clone()]);
+    let deque = Deque::from_str(
+        r#"
+a0
+a1: a0
+a2: a1
+a3: a2
 
-        let smth = Card::new("smth", [d1.clone(), c0.clone()]);
+b0
+b1: b0
+b2: b1
+b3: b2
 
-        let c3 = Card::new("c3", [c2.clone(), smth.clone()]);
-        let c4 = Card::new("c4", [c3.clone()]);
+d0: a3, b3
+d1: d0
+d2: d1
+d3: d2
+d4: d3
 
-        Deque::new([d4, c4])
-    };
+c0
+c1: c0
+c2: c1
+c3: c2, smth
+c4: c3
+smth: d1, c0
+"#,
+    )
+    .unwrap_or_else(|err| {
+        println!("{err}");
+        panic!("parsing error");
+    });
 
     let graph = deque.generate_graph();
 

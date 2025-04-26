@@ -13,7 +13,7 @@ impl CardPrototype {
     pub fn parser<'a>() -> impl Parser<'a, &'a str, CardPrototype, Err<'a>> {
         fn ident<'a>() -> impl Parser<'a, &'a str, String, Err<'a>> {
             none_of(":")
-            .filter(|c: &char| c.is_alphabetic() || c.is_inline_whitespace())
+            .filter(|c: &char| c.is_alphanumeric() || c.is_inline_whitespace())
             .repeated()
             .at_least(1)
             .to_slice()
