@@ -14,28 +14,30 @@ pub enum TaskProgress {
 }
 
 pub trait TaskProgressStore {
-    fn get_progress(&self, id: u64) -> TaskProgress;
-    fn init(&mut self, id: u64);
-    fn update_recursive_failed(&mut self, id: u64);
-    fn iter(&self) -> impl Iterator<Item = (u64, TaskProgress)>;
+    type Id: PartialEq;
+    fn get_progress(&self, id: &Self::Id) -> TaskProgress;
+    fn init(&mut self, id: &Self::Id);
+    fn update_recursive_failed(&mut self, id: &Self::Id);
+    fn iter(&self) -> impl Iterator<Item = (&Self::Id, TaskProgress)>;
 }
 
-impl TaskProgressStore for HashMap<u64, TaskProgress> {
-    fn get_progress(&self, id: u64) -> TaskProgress {
+impl TaskProgressStore for HashMap<String, TaskProgress> {
+    type Id = String;
+    fn get_progress(&self, id: &Self::Id) -> TaskProgress {
         *self
-            .get(&id)
+            .get(id)
             .expect("task progress store should have all tasks before querying")
     }
 
-    fn init(&mut self, id: u64) {
-        self.entry(id).or_insert(TaskProgress::NotStarted {
+    fn init(&mut self, id: &Self::Id) {
+        self.entry(id.clone()).or_insert(TaskProgress::NotStarted {
             could_be_learned: true,
         });
     }
 
-    fn update_recursive_failed(&mut self, id: u64) {
+    fn update_recursive_failed(&mut self, id: &Self::Id) {
         let x = self
-            .get_mut(&id)
+            .get_mut(id)
             .expect("task progress store should have all tasks before querying");
         match x {
             TaskProgress::NotStarted { .. } => {
@@ -48,21 +50,21 @@ impl TaskProgressStore for HashMap<u64, TaskProgress> {
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = (u64, TaskProgress)> {
-        self.iter().map(|(id, progress)| (*id, *progress))
+    fn iter(&self) -> impl Iterator<Item = (&Self::Id, TaskProgress)> {
+        self.iter().map(|(id, progress)| (id, *progress))
     }
 }
 
-fn propagate_fail(card: &Card, store: &mut impl TaskProgressStore) {
-    store.update_recursive_failed(card.id);
+fn propagate_fail(card: &Card, store: &mut impl TaskProgressStore<Id = String>) {
+    store.update_recursive_failed(&card.name);
     card.dependents
         .iter()
         .map(|x| x.upgrade().unwrap())
         .for_each(|x| propagate_fail(&x.borrow(), store));
 }
 
-fn detect_recursive_fail(card: &Card, store: &mut impl TaskProgressStore) {
-    if let TaskProgress::Failed = store.get_progress(card.id) {
+fn detect_recursive_fail(card: &Card, store: &mut impl TaskProgressStore<Id = String>) {
+    if let TaskProgress::Failed = store.get_progress(&card.name) {
         propagate_fail(card, store);
     } else {
         card.dependencies
@@ -81,7 +83,7 @@ pub trait TaskProgressStoreExt {
 
 impl<T> TaskProgressStoreExt for T
 where
-    T: TaskProgressStore,
+    T: TaskProgressStore<Id = String>,
 {
     fn generate_stmts(&self) -> Vec<Stmt> {
         let mut stmts = Vec::new();
@@ -93,7 +95,7 @@ where
                 TaskProgress::NotStarted { .. } => color_name::white,
             };
             stmts.push(Stmt::Node(Node {
-                id: NodeId(id_from_id(id), None),
+                id: NodeId(id_from_string(id), None),
                 attributes: vec![
                     NodeAttributes::style("filled".into()),
                     NodeAttributes::fillcolor(color),
@@ -104,7 +106,7 @@ where
             } = progress
             {
                 stmts.push(Stmt::Node(Node {
-                    id: NodeId(id_from_id(id), None),
+                    id: NodeId(id_from_string(id), None),
                     attributes: vec![NodeAttributes::penwidth(3.)],
                 }));
             }

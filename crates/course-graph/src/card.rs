@@ -5,7 +5,6 @@ use std::{
 
 pub struct Card {
     pub name: String,
-    pub id: u64,
     pub dependencies: Vec<Rc<RefCell<Card>>>,
     pub dependents: Vec<Weak<RefCell<Card>>>,
 }
@@ -14,14 +13,12 @@ impl Card {
     // FIXME: check for cycles
     pub fn new(
         name: impl ToString,
-        id: u64,
         dependencies: impl IntoIterator<Item = Rc<RefCell<Card>>>,
     ) -> Rc<RefCell<Card>> {
         let name = name.to_string();
         assert!(!name.contains('"'));
         let card = Rc::new(RefCell::new(Card {
             name,
-            id,
             dependencies: Vec::new(),
             dependents: Vec::new(),
         }));
@@ -36,8 +33,8 @@ impl Card {
 
         let mut stmts = Vec::new();
         for dependency in &self.dependencies {
-            let id1 = id_from_id(self.id);
-            let id2 = id_from_id(dependency.borrow().id);
+            let id1 = id_from_string(&self.name);
+            let id2 = id_from_string(&dependency.borrow().name);
             stmts.push(Stmt::Node(Node {
                 id: NodeId(id1.clone(), None),
                 attributes: vec![NodeAttributes::label(self.name.clone())],

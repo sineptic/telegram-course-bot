@@ -44,7 +44,7 @@ impl Deque {
     pub fn generate_stmts(&self) -> Vec<Stmt> {
         let mut stmts = Vec::new();
         for top_level_card in &self.top_level_cards {
-            let id = id_from_id(top_level_card.borrow().id);
+            let id = id_from_string(&top_level_card.borrow().name);
             stmts.push(Stmt::Edge(edge_from_ids(
                 id_from_string("Finish"),
                 id.clone(),
