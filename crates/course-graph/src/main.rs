@@ -1,12 +1,12 @@
 use std::{collections::HashMap, str::FromStr};
 
 use course_graph::{
-    deque::Deque,
-    progress_store::{TaskProgress, TaskProgressStore, TaskProgressStoreExt},
+    graph::CourseGraph,
+    progress_store::{TaskProgress, TaskProgressStoreExt},
 };
 
 fn main() {
-    let deque = Deque::from_str(
+    let course_graph = CourseGraph::from_str(
         r#"
 a0
 a1: a0
@@ -37,12 +37,10 @@ smth: d1, c0
         panic!("parsing error");
     });
 
-    let graph = deque.generate_graph();
+    let graph = course_graph.generate_graph();
 
     let mut progress_store = HashMap::new();
-    deque.for_each_repeated(&mut |x| {
-        progress_store.init(&x.borrow().name);
-    });
+    course_graph.init_store(&mut progress_store);
     progress_store.extend(
         [
             ("a0", TaskProgress::Good),
@@ -65,7 +63,7 @@ smth: d1, c0
         .into_iter()
         .map(|(id, progress)| (id.to_owned(), progress)),
     );
-    progress_store.detect_recursive_fails(&deque);
+    course_graph.detect_recursive_fails(&mut progress_store);
     let mut graph = graph.clone();
     progress_store
         .generate_stmts()

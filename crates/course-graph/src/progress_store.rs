@@ -3,8 +3,6 @@ use std::collections::HashMap;
 use dot_structures::{Node, Stmt};
 use graphviz_rust::attributes::{NodeAttributes, color_name};
 
-use crate::card::Card;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskProgress {
     NotStarted { could_be_learned: bool },
@@ -55,30 +53,10 @@ impl TaskProgressStore for HashMap<String, TaskProgress> {
     }
 }
 
-fn propagate_fail(card: &Card, store: &mut impl TaskProgressStore<Id = String>) {
-    store.update_recursive_failed(&card.name);
-    card.dependents
-        .iter()
-        .map(|x| x.upgrade().unwrap())
-        .for_each(|x| propagate_fail(&x.borrow(), store));
-}
-
-fn detect_recursive_fail(card: &Card, store: &mut impl TaskProgressStore<Id = String>) {
-    if let TaskProgress::Failed = store.get_progress(&card.name) {
-        propagate_fail(card, store);
-    } else {
-        card.dependencies
-            .iter()
-            .map(|x| x.borrow())
-            .for_each(|x| detect_recursive_fail(&x, store));
-    }
-}
-
-use crate::{deque::Deque, utils::*};
+use crate::utils::*;
 
 pub trait TaskProgressStoreExt {
     fn generate_stmts(&self) -> Vec<Stmt>;
-    fn detect_recursive_fails(&mut self, deque: &Deque);
 }
 
 impl<T> TaskProgressStoreExt for T
@@ -112,12 +90,5 @@ where
             }
         }
         stmts
-    }
-
-    fn detect_recursive_fails(&mut self, deque: &Deque) {
-        deque
-            .top_level_cards
-            .iter()
-            .for_each(|card| detect_recursive_fail(&card.borrow(), self));
     }
 }
