@@ -1,3 +1,6 @@
+use std::{collections::HashMap, str::FromStr};
+
+use course_graph::graph::CourseGraph;
 use rand::SeedableRng;
 use teloxide::{Bot, prelude::Requester, types::UserId};
 use tokio::sync::oneshot;
@@ -10,6 +13,20 @@ use crate::{
 };
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
+    let course_graph = CourseGraph::from_str(
+        r#"
+capitals: countries
+countries
+"#,
+    )
+    .unwrap_or_else(|err| {
+        println!("{err}");
+        panic!("graph parsing error");
+    });
+    let mut progress_store = HashMap::new();
+    course_graph.init_store(&mut progress_store);
+    let base_graph = course_graph.generate_graph();
+
     let deque = deque::from_str(&std::fs::read_to_string("cards.md").unwrap(), true).unwrap();
     let mut rng = rand::rngs::StdRng::from_os_rng();
 
@@ -43,15 +60,15 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
             }
 
             Event::ListCards { user_id } => {
-                let names = deque
-                    .keys()
-                    .map(|x| format!("- {x}"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let message = vec![TelegramInteraction::Text(format!("card names:\n{names}"))];
-                send_interactions(bot.clone(), user_id, message)
-                    .await
-                    .log_err();
+                let graph_image =
+                    course_graph::generate_graph_chart(base_graph.clone(), &progress_store);
+                send_interactions(
+                    bot.clone(),
+                    user_id,
+                    vec![TelegramInteraction::PersonalImage(graph_image)],
+                )
+                .await
+                .log_err();
             }
         }
     }

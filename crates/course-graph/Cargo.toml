@@ -5,6 +5,6 @@ edition = "2024"
 
 [dependencies]
 dot-structures = "0.1.1"
-graphviz-rust = "0.9.3"
+graphviz-rust.workspace = true
 chumsky = "0.10.0"
 ariadne = "0.5.1"

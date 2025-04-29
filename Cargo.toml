@@ -2,6 +2,9 @@
 resolver = "3"
 members = ["crates/*"]
 
+[workspace.dependencies]
+graphviz-rust = "0.9.3"
+
 [profile.release]
 debug-assertions = true
 overflow-checks = true

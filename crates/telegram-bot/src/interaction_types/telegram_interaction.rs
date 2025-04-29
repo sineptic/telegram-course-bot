@@ -9,6 +9,7 @@ pub enum TelegramInteraction {
     Text(String),
     UserInput,
     Image(PathBuf),
+    PersonalImage(Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

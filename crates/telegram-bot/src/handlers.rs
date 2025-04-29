@@ -227,6 +227,13 @@ pub async fn progress_on_user_event(
                 *current += 1;
                 answers.push(String::new());
             }
+            TelegramInteraction::PersonalImage(bytes) => {
+                // FIXME: don't clone bytes(image)
+                bot.send_photo(chat_id, InputFile::memory(bytes.clone()))
+                    .await?;
+                *current += 1;
+                answers.push(String::new());
+            }
         }
     }
     Ok(())

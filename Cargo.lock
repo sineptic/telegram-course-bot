@@ -1690,7 +1690,9 @@ checksum = "20f34339676cdcab560c9a82300c4c2581f68b9369aedf0fae86f2ff9565ff3e"
 name = "telegram-bot"
 version = "0.1.0"
 dependencies = [
+ "course_graph",
  "dotenvy",
+ "graphviz-rust",
  "log",
  "openssl",
  "pretty_env_logger",
