@@ -18,10 +18,14 @@ impl CardPrototype {
             .at_least(1)
             .to_slice()
             .try_map(|x: &str, span| {
+                let x = x.to_lowercase();
                 if x.starts_with(" ") || x.ends_with(" ") {
                     return Err(Rich::custom(span, "Card name should containt whitespaces only inside, not at start or end"));
                 }
-                Ok(x.to_lowercase())
+                if x == "finish" {
+                    return Err(Rich::custom(span, "Card shouldn't be named 'finish'"));
+                }
+                Ok(x)
             })
         }
         ident()

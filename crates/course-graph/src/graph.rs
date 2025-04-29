@@ -26,6 +26,15 @@ impl CourseGraph {
         self.cards
             .keys()
             .flat_map(|name| self.generate_card_stmts(name))
+            .chain(
+                self.cards
+                    .iter()
+                    .filter(|(_, card)| card.dependents.is_empty())
+                    .map(|(x, _)| x)
+                    .flat_map(|top_level_dependencie| {
+                        generate_edge_stmts("Finish", top_level_dependencie)
+                    }),
+            )
     }
     pub fn generate_graph(&self) -> Graph {
         Graph::DiGraph {
