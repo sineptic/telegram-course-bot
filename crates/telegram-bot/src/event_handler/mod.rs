@@ -23,7 +23,7 @@ pub(crate) mod ctx {
     use crate::interaction_types::{Task, deque};
 
     pub struct BotCtx {
-        course_graph: CourseGraph,
+        _course_graph: CourseGraph,
         pub progress_store: HashMap<String, TaskProgress>,
         base_graph: Graph,
         pub deque: BTreeMap<String, BTreeMap<u16, Task>>,
@@ -47,7 +47,7 @@ pub(crate) mod ctx {
             let rng = StdRng::from_os_rng();
 
             Self {
-                course_graph,
+                _course_graph: course_graph,
                 progress_store,
                 base_graph,
                 deque,
