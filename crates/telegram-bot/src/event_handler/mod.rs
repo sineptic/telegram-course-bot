@@ -13,16 +13,11 @@ use crate::{
 };
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
-    let course_graph = CourseGraph::from_str(
-        r#"
-capitals: countries
-countries
-"#,
-    )
-    .unwrap_or_else(|err| {
-        println!("{err}");
-        panic!("graph parsing error");
-    });
+    let course_graph = CourseGraph::from_str(&std::fs::read_to_string("graph").unwrap())
+        .unwrap_or_else(|err| {
+            println!("{err}");
+            panic!("graph parsing error");
+        });
     let mut progress_store = HashMap::new();
     course_graph.init_store(&mut progress_store);
     let base_graph = course_graph.generate_graph();
