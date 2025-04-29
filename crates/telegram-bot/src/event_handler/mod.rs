@@ -64,9 +64,7 @@ pub(crate) mod ctx {
     }
 }
 
-pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
-    let mut ctx = BotCtx::load(bot);
-
+pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
         match event {
             Event::ReviseCard { user_id, card_name } => {
