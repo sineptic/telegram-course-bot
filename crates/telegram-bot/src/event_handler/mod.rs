@@ -59,7 +59,7 @@ countries
                     .log_err();
             }
 
-            Event::ListCards { user_id } => {
+            Event::ViewGraph { user_id } => {
                 let graph_image =
                     course_graph::generate_graph_chart(base_graph.clone(), &progress_store);
                 send_interactions(

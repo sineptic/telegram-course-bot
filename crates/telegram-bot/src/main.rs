@@ -27,7 +27,7 @@ static STATE: LazyLock<Mutex<HashMap<UserId, State>>> =
 #[derive(Clone, Debug)]
 enum Event {
     ReviseCard { user_id: UserId, card_name: String },
-    ListCards { user_id: UserId },
+    ViewGraph { user_id: UserId },
 }
 type EventSender = Arc<tokio::sync::mpsc::Sender<Event>>;
 type EventReceiver = tokio::sync::mpsc::Receiver<Event>;
