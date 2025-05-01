@@ -43,6 +43,9 @@ impl CourseGraph {
             stmts: self.generate_stmts().collect(),
         }
     }
+    pub fn cards_count(&self) -> usize {
+        self.cards.len()
+    }
 }
 
 fn generate_edge_stmts(first: &str, second: &str) -> impl Iterator<Item = Stmt> {

@@ -9,60 +9,7 @@ use crate::{
     utils::ResultExt,
 };
 
-pub(crate) mod ctx {
-    use std::{
-        collections::{BTreeMap, HashMap},
-        str::FromStr,
-    };
-
-    use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
-    use graphviz_rust::dot_structures::Graph;
-    use rand::{SeedableRng, rngs::StdRng};
-    use teloxide::Bot;
-
-    use crate::interaction_types::{Task, deque};
-
-    pub struct BotCtx {
-        _course_graph: CourseGraph,
-        pub progress_store: HashMap<String, TaskProgress>,
-        base_graph: Graph,
-        pub deque: BTreeMap<String, BTreeMap<u16, Task>>,
-        pub rng: StdRng,
-        bot: Bot,
-    }
-
-    impl BotCtx {
-        pub fn load(bot: Bot) -> Self {
-            let course_graph = CourseGraph::from_str(&std::fs::read_to_string("graph").unwrap())
-                .unwrap_or_else(|err| {
-                    println!("{err}");
-                    panic!("graph parsing error");
-                });
-            let mut progress_store = HashMap::new();
-            course_graph.init_store(&mut progress_store);
-            let base_graph = course_graph.generate_graph();
-
-            let deque =
-                deque::from_str(&std::fs::read_to_string("cards.md").unwrap(), true).unwrap();
-            let rng = StdRng::from_os_rng();
-
-            Self {
-                _course_graph: course_graph,
-                progress_store,
-                base_graph,
-                deque,
-                rng,
-                bot,
-            }
-        }
-        pub fn base_graph(&self) -> Graph {
-            self.base_graph.clone()
-        }
-        pub fn bot(&self) -> Bot {
-            self.bot.clone()
-        }
-    }
-}
+pub(crate) mod ctx;
 
 pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
