@@ -65,7 +65,7 @@ pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
                             ctx.bot(),
                             user_id,
                             vec![TelegramInteraction::Text(format!(
-                                "There is no '{card_name}' card"
+                                "There is no '{card_name}' card."
                             ))],
                         )
                         .await
@@ -80,18 +80,25 @@ pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
                             }
                         )
                     }) {
-                        todo!()
+                        send_interactions(
+                            ctx.bot(),
+                            user_id,
+                            vec![TelegramInteraction::Text(format!(
+                                "All '{card_name}' dependencies should be started."
+                            ))],
+                        )
+                        .await
+                        .log_err();
+                        continue;
                     }
                     *ctx.progress_store.get_mut(&card_name).unwrap() = progress;
                     ctx.course_graph
                         .detect_recursive_fails(&mut ctx.progress_store);
                 }
                 TaskProgress::NotStarted {
-                    could_be_learned: _,
-                } => {
-                    todo!()
-                }
-                _ => todo!(),
+                    could_be_learned: true,
+                } => {}
+                _ => unreachable!("should not receive set event with this task progress"),
             },
         }
     }
