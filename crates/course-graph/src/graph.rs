@@ -78,11 +78,29 @@ impl CourseGraph {
             .for_each(|x| self.propagate_fail(x, store));
     }
 
+    fn propagate_no_fail(&self, name: &String, store: &mut impl TaskProgressStore<Id = String>) {
+        if self.cards[name]
+            .dependencies
+            .iter()
+            .any(|x| store.get_progress(x) != TaskProgress::Good)
+        {
+            return;
+        }
+        store.update_no_recursive_failed(name);
+        self.cards[name]
+            .dependents
+            .iter()
+            .for_each(|x| self.propagate_no_fail(x, store));
+    }
+
     pub fn detect_recursive_fails(&self, store: &mut impl TaskProgressStore<Id = String>) {
         self.cards.keys().for_each(|name| {
             if store.get_progress(name) == TaskProgress::Failed {
                 self.propagate_fail(name, store);
             }
+        });
+        self.cards.keys().for_each(|name| {
+            self.propagate_no_fail(name, store);
         });
     }
 }

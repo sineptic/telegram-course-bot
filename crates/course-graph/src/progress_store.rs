@@ -30,6 +30,7 @@ pub trait TaskProgressStore {
     fn get_progress(&self, id: &Self::Id) -> TaskProgress;
     fn init(&mut self, id: &Self::Id);
     fn update_recursive_failed(&mut self, id: &Self::Id);
+    fn update_no_recursive_failed(&mut self, id: &Self::Id);
     fn iter(&self) -> impl Iterator<Item = (&Self::Id, TaskProgress)>;
 }
 
@@ -58,6 +59,20 @@ impl TaskProgressStore for HashMap<String, TaskProgress> {
                 }
             }
             TaskProgress::Good => *x = TaskProgress::RecursiveFailed,
+            _ => {}
+        }
+    }
+    fn update_no_recursive_failed(&mut self, id: &Self::Id) {
+        let x = self
+            .get_mut(id)
+            .expect("task progress store should have all tasks before querying");
+        match x {
+            TaskProgress::NotStarted { .. } => {
+                *x = TaskProgress::NotStarted {
+                    could_be_learned: true,
+                }
+            }
+            TaskProgress::RecursiveFailed => *x = TaskProgress::Good,
             _ => {}
         }
     }
