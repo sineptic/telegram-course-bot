@@ -16,7 +16,7 @@ fn non_empty(input: String) -> Result<(String,), ParseError> {
 }
 
 #[derive(BotCommands)]
-#[command(rename_rule = "lowercase")]
+#[command(rename_rule = "lowercase", parse_with = "split")]
 pub enum Command {
     /// Revise
     #[command(parse_with = non_empty)]
@@ -25,6 +25,7 @@ pub enum Command {
     Graph,
     /// Display all commands
     Help,
+    Set(String, TaskProgress),
     #[command(hide)]
     Start,
 }

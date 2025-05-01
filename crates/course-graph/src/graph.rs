@@ -5,7 +5,7 @@ use graphviz_rust::attributes::NodeAttributes;
 
 use crate::card::CardNode;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 #[allow(clippy::manual_non_exhaustive)]
 pub struct CourseGraph {
     pub(crate) cards: HashMap<String, CardNode>,
@@ -43,8 +43,8 @@ impl CourseGraph {
             stmts: self.generate_stmts().collect(),
         }
     }
-    pub fn cards_count(&self) -> usize {
-        self.cards.len()
+    pub fn cards(&self) -> &HashMap<String, CardNode> {
+        &self.cards
     }
 }
 

@@ -1,3 +1,6 @@
+use std::ops::Deref;
+
+use course_graph::progress_store::{TaskProgress, TaskProgressStore};
 use ctx::BotCtx;
 use teloxide::{Bot, prelude::Requester, types::UserId};
 use tokio::sync::oneshot;
@@ -52,6 +55,32 @@ pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
                 .await
                 .log_err();
             }
+
+            Event::SetCardProgress {
+                user_id,
+                card_name,
+                progress,
+            } => match progress {
+                TaskProgress::Good | TaskProgress::Failed => {
+                    let Some(card_node) = ctx.course_graph.cards().get(&card_name) else {
+                        todo!()
+                    };
+                    if card_node.dependencies.iter().any(|dependencie| {
+                        matches!(
+                            ctx.progress_store.get_progress(dependencie),
+                            TaskProgress::NotStarted {
+                                could_be_learned: _
+                            }
+                        )
+                    }) {
+                        todo!()
+                    }
+                    *ctx.progress_store.get_mut(&card_name).unwrap() = progress;
+                    ctx.course_graph
+                        .detect_recursive_fails(&mut ctx.progress_store);
+                }
+                _ => todo!(),
+            },
         }
     }
 }

@@ -1,4 +1,4 @@
-use std::panic::Location;
+use std::{ops::Deref, panic::Location};
 
 #[macro_export]
 macro_rules! check {
@@ -109,3 +109,19 @@ where
 // pub fn log_err<E: std::fmt::Debug>(error: &E) {
 //     log_error_with_caller(*Location::caller(), error, log::Level::Warn);
 // }
+
+/// Struct for value, that should be immutable from this point.
+/// Use From to create.
+pub struct Immutable<T>(T);
+impl<T> From<T> for Immutable<T> {
+    fn from(value: T) -> Self {
+        Self(value)
+    }
+}
+impl<T> Deref for Immutable<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}

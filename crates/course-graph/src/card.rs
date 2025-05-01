@@ -4,7 +4,7 @@ pub struct Card {
     pub dependencies: Vec<String>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct CardNode {
     pub dependencies: Vec<String>,
     pub dependents: Vec<String>,

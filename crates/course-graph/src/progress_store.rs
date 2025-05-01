@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use dot_structures::{Node, Stmt};
 use graphviz_rust::attributes::{NodeAttributes, color_name};
@@ -9,6 +9,20 @@ pub enum TaskProgress {
     Good,
     Failed,
     RecursiveFailed,
+}
+impl FromStr for TaskProgress {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "good" => Ok(Self::Good),
+            "failed" => Ok(Self::Failed),
+            "not_started" => Ok(Self::NotStarted {
+                could_be_learned: true,
+            }),
+            _ => Err("posslible variants: 'good', 'failed', 'not_started'".into()),
+        }
+    }
 }
 
 pub trait TaskProgressStore {

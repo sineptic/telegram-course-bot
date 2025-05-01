@@ -4,6 +4,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
+use course_graph::progress_store::TaskProgress;
 use event_handler::ctx::BotCtx;
 use teloxide::{
     payloads::SendMessageSetters,
@@ -27,8 +28,18 @@ static STATE: LazyLock<Mutex<HashMap<UserId, State>>> =
 
 #[derive(Clone, Debug)]
 enum Event {
-    ReviseCard { user_id: UserId, card_name: String },
-    ViewGraph { user_id: UserId },
+    ReviseCard {
+        user_id: UserId,
+        card_name: String,
+    },
+    ViewGraph {
+        user_id: UserId,
+    },
+    SetCardProgress {
+        user_id: UserId,
+        card_name: String,
+        progress: TaskProgress,
+    },
 }
 type EventSender = Arc<tokio::sync::mpsc::Sender<Event>>;
 type EventReceiver = tokio::sync::mpsc::Receiver<Event>;

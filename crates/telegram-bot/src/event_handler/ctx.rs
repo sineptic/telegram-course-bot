@@ -8,10 +8,13 @@ use graphviz_rust::dot_structures::Graph;
 use rand::{SeedableRng, rngs::StdRng};
 use teloxide::Bot;
 
-use crate::interaction_types::{Task, deque};
+use crate::{
+    interaction_types::{Task, deque},
+    utils::Immutable,
+};
 
 pub struct BotCtx {
-    _course_graph: CourseGraph,
+    pub course_graph: Immutable<CourseGraph>,
     pub progress_store: HashMap<String, TaskProgress>,
     base_graph: Graph,
     pub deque: BTreeMap<String, BTreeMap<u16, Task>>,
@@ -36,7 +39,7 @@ impl BotCtx {
         check_cards_consistency(&progress_store, &deque);
 
         Self {
-            _course_graph: course_graph,
+            course_graph: course_graph.into(),
             progress_store,
             base_graph,
             deque,
