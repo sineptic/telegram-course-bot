@@ -14,114 +14,120 @@ pub(crate) mod ctx;
 
 pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
-        match event {
-            Event::ReviseCard { user_id, card_name } => {
-                let Some(tasks) = ctx.deque.get(&card_name.to_lowercase()) else {
-                    send_interactions(
-                        ctx.bot(),
-                        user_id,
-                        vec![TelegramInteraction::Text(
-                            "Card with this name not found".into(),
-                        )],
-                    )
-                    .await
-                    .log_err();
-                    continue;
-                };
-                let task = card::random_task(tasks, &mut ctx.rng).clone();
-                let (tx, rx) = oneshot::channel();
-                tokio::spawn(event_end_handler(
-                    ctx.bot(),
-                    rx,
-                    user_id,
-                    task.correct_answer().to_owned(),
-                    task.explanation.clone(),
-                ));
-                set_task_for_user(ctx.bot(), user_id, task.interactions(), tx)
-                    .await
-                    .log_err();
-            }
+        process_event(&mut ctx, event).await;
+    }
+}
 
-            Event::ViewGraph { user_id } => {
-                let graph_image =
-                    course_graph::generate_graph_chart(ctx.base_graph(), &ctx.progress_store);
+async fn process_event(ctx: &mut BotCtx, event: Event) {
+    match event {
+        Event::ReviseCard { user_id, card_name } => {
+            let Some(tasks) = ctx.deque.get(&card_name.to_lowercase()) else {
                 send_interactions(
                     ctx.bot(),
                     user_id,
-                    vec![TelegramInteraction::PersonalImage(graph_image)],
+                    vec![TelegramInteraction::Text(
+                        "Card with this name not found".into(),
+                    )],
                 )
                 .await
                 .log_err();
-            }
-
-            Event::SetCardProgress {
+                return;
+            };
+            let task = card::random_task(tasks, &mut ctx.rng).clone();
+            let (tx, rx) = oneshot::channel();
+            tokio::spawn(event_end_handler(
+                ctx.bot(),
+                rx,
                 user_id,
-                card_name,
-                progress,
-            } => {
-                let Some(card_node) = ctx.course_graph.cards().get(&card_name) else {
-                    send_interactions(
-                        ctx.bot(),
-                        user_id,
-                        vec![TelegramInteraction::Text(format!(
-                            "There is no '{card_name}' card."
-                        ))],
-                    )
-                    .await
-                    .log_err();
-                    continue;
-                };
-                match progress {
-                    TaskProgress::Good | TaskProgress::Failed => {
-                        if card_node.dependencies.iter().any(|dependencie| {
-                            matches!(
-                                ctx.progress_store.get_progress(dependencie),
-                                TaskProgress::NotStarted {
-                                    could_be_learned: _
-                                }
-                            )
-                        }) {
-                            send_interactions(
-                                ctx.bot(),
-                                user_id,
-                                vec![TelegramInteraction::Text(format!(
-                                    "All '{card_name}' dependencies should be started."
-                                ))],
-                            )
-                            .await
-                            .log_err();
-                            continue;
-                        }
+                task.correct_answer().to_owned(),
+                task.explanation.clone(),
+            ));
+            set_task_for_user(ctx.bot(), user_id, task.interactions(), tx)
+                .await
+                .log_err();
+        }
+
+        Event::ViewGraph { user_id } => {
+            let graph_image =
+                course_graph::generate_graph_chart(ctx.base_graph(), &ctx.progress_store);
+            send_interactions(
+                ctx.bot(),
+                user_id,
+                vec![TelegramInteraction::PersonalImage(graph_image)],
+            )
+            .await
+            .log_err();
+        }
+
+        Event::SetCardProgress {
+            user_id,
+            card_name,
+            progress,
+        } => {
+            let Some(card_node) = ctx.course_graph.cards().get(&card_name) else {
+                send_interactions(
+                    ctx.bot(),
+                    user_id,
+                    vec![TelegramInteraction::Text(format!(
+                        "There is no '{card_name}' card."
+                    ))],
+                )
+                .await
+                .log_err();
+                return;
+            };
+            match progress {
+                TaskProgress::Good | TaskProgress::Failed => {
+                    if card_node.dependencies.iter().any(|dependencie| {
+                        matches!(
+                            ctx.progress_store.get_progress(dependencie),
+                            TaskProgress::NotStarted {
+                                could_be_learned: _
+                            }
+                        )
+                    }) {
+                        send_interactions(
+                            ctx.bot(),
+                            user_id,
+                            vec![TelegramInteraction::Text(format!(
+                                "All '{card_name}' dependencies should be started."
+                            ))],
+                        )
+                        .await
+                        .log_err();
+                        return;
                     }
-                    TaskProgress::NotStarted {
-                        could_be_learned: true,
-                    } => {
-                        if card_node.dependents.iter().any(|dependencie| {
-                            !matches!(
-                                ctx.progress_store.get_progress(dependencie),
-                                TaskProgress::NotStarted {
-                                    could_be_learned: _
-                                }
-                            )
-                        }) {
-                            send_interactions(
-                                ctx.bot(),
-                                user_id,
-                                vec![TelegramInteraction::Text(format!(
-                                    "All '{card_name}' dependents should not be started."
-                                ))],
-                            )
-                            .await
-                            .log_err();
-                            continue;
-                        }
+                }
+                TaskProgress::NotStarted {
+                    could_be_learned: true,
+                } => {
+                    if card_node.dependents.iter().any(|dependencie| {
+                        !matches!(
+                            ctx.progress_store.get_progress(dependencie),
+                            TaskProgress::NotStarted {
+                                could_be_learned: _
+                            }
+                        )
+                    }) {
+                        send_interactions(
+                            ctx.bot(),
+                            user_id,
+                            vec![TelegramInteraction::Text(format!(
+                                "All '{card_name}' dependents should not be started."
+                            ))],
+                        )
+                        .await
+                        .log_err();
+                        return;
                     }
-                    _ => unreachable!("should not receive set event with this task progress"),
-                };
-                *ctx.progress_store.get_mut(&card_name).unwrap() = progress;
-                ctx.course_graph
-                    .detect_recursive_fails(&mut ctx.progress_store);
-            }
+                }
+                _ => unreachable!("should not receive set event with this task progress"),
+            };
+            *ctx.progress_store.get_mut(&card_name).unwrap() = progress;
+            ctx.course_graph
+                .detect_recursive_fails(&mut ctx.progress_store);
+
+            Box::pin(process_event(ctx, Event::ViewGraph { user_id })).await;
         }
     }
 }
