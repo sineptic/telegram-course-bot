@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use course_graph::progress_store::{TaskProgress, TaskProgressStore};
 use ctx::BotCtx;
 use teloxide::{Bot, prelude::Requester, types::UserId};
@@ -63,7 +61,16 @@ pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
             } => match progress {
                 TaskProgress::Good | TaskProgress::Failed => {
                     let Some(card_node) = ctx.course_graph.cards().get(&card_name) else {
-                        todo!()
+                        send_interactions(
+                            ctx.bot(),
+                            user_id,
+                            vec![TelegramInteraction::Text(format!(
+                                "There is no '{card_name}' card"
+                            ))],
+                        )
+                        .await
+                        .log_err();
+                        continue;
                     };
                     if card_node.dependencies.iter().any(|dependencie| {
                         matches!(
@@ -78,6 +85,11 @@ pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
                     *ctx.progress_store.get_mut(&card_name).unwrap() = progress;
                     ctx.course_graph
                         .detect_recursive_fails(&mut ctx.progress_store);
+                }
+                TaskProgress::NotStarted {
+                    could_be_learned: _,
+                } => {
+                    todo!()
                 }
                 _ => todo!(),
             },
