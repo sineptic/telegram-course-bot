@@ -140,7 +140,7 @@ async fn event_end_handler(
     explanation: Option<Vec<telegram_interaction::QuestionElement>>,
 ) {
     // FIXME
-    let Ok(result): Result<Vec<String>, _> = rx.await else {
+    let Ok(result) = rx.await else {
         log::warn!("todo: handle user input cancellation");
         return;
     };
