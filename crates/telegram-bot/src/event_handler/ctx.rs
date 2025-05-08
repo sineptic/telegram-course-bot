@@ -63,16 +63,16 @@ fn check_cards_consistency(
     progress_store
         .keys()
         .filter(|x| !deque.contains_key(*x))
-        .for_each(|x| {
-            errors.push(format!(
-                "Graph has '{x}' card, but deque(cards.md) doesn't."
-            ));
+        .map(|err| format!("Graph has '{err}' card, but deque(cards.md) doesn't."))
+        .for_each(|item| {
+            errors.push(item);
         });
     deque
         .keys()
         .filter(|x| !progress_store.contains_key(*x))
-        .for_each(|x| {
-            errors.push(format!("Deque(cards.md) has '{x}', but graph doesn't."));
+        .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
+        .for_each(|item| {
+            errors.push(item);
         });
     if !errors.is_empty() {
         panic!(

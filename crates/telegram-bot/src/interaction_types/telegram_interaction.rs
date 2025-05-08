@@ -11,6 +11,14 @@ pub enum TelegramInteraction {
     Image(PathBuf),
     PersonalImage(Vec<u8>),
 }
+impl<T> From<T> for TelegramInteraction
+where
+    T: Into<String>,
+{
+    fn from(value: T) -> Self {
+        TelegramInteraction::Text(value.into())
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum QuestionElement {

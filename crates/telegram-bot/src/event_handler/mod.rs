@@ -25,9 +25,7 @@ async fn process_event(ctx: &mut BotCtx, event: Event) {
                 send_interactions(
                     ctx.bot(),
                     user_id,
-                    vec![TelegramInteraction::Text(
-                        "Card with this name not found".into(),
-                    )],
+                    vec!["Card with this name not found".into()],
                 )
                 .await
                 .log_err();
@@ -68,9 +66,7 @@ async fn process_event(ctx: &mut BotCtx, event: Event) {
                 send_interactions(
                     ctx.bot(),
                     user_id,
-                    vec![TelegramInteraction::Text(format!(
-                        "There is no '{card_name}' card."
-                    ))],
+                    vec![format!("There is no '{card_name}' card.").into()],
                 )
                 .await
                 .log_err();
@@ -89,9 +85,9 @@ async fn process_event(ctx: &mut BotCtx, event: Event) {
                         send_interactions(
                             ctx.bot(),
                             user_id,
-                            vec![TelegramInteraction::Text(format!(
-                                "All '{card_name}' dependencies should be started."
-                            ))],
+                            vec![
+                                format!("All '{card_name}' dependencies should be started.").into(),
+                            ],
                         )
                         .await
                         .log_err();
@@ -112,9 +108,10 @@ async fn process_event(ctx: &mut BotCtx, event: Event) {
                         send_interactions(
                             ctx.bot(),
                             user_id,
-                            vec![TelegramInteraction::Text(format!(
-                                "All '{card_name}' dependents should not be started."
-                            ))],
+                            vec![
+                                format!("All '{card_name}' dependents should not be started.")
+                                    .into(),
+                            ],
                         )
                         .await
                         .log_err();

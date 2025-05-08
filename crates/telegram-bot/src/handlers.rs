@@ -109,7 +109,7 @@ pub async fn set_task_for_user(
     let state = state.entry(user_id).or_insert(State::default());
 
     *state = State::UserEvent {
-        interactions: interactions.clone(),
+        interactions,
         current: 0,
         current_id: rand::random(),
         current_message: None,
