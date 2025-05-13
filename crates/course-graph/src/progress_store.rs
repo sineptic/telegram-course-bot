@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, ops::Index, str::FromStr};
 
 use dot_structures::{Node, Stmt};
 use graphviz_rust::attributes::{NodeAttributes, color_name};
@@ -24,10 +24,16 @@ impl FromStr for TaskProgress {
         }
     }
 }
+impl Default for TaskProgress {
+    fn default() -> Self {
+        TaskProgress::NotStarted {
+            could_be_learned: false,
+        }
+    }
+}
 
-pub trait TaskProgressStore {
+pub trait TaskProgressStore: for<'a> Index<&'a Self::Id, Output = TaskProgress> {
     type Id: PartialEq;
-    fn get_progress(&self, id: &Self::Id) -> TaskProgress;
     fn init(&mut self, id: &Self::Id);
     fn update_recursive_failed(&mut self, id: &Self::Id);
     fn update_no_recursive_failed(&mut self, id: &Self::Id);
@@ -36,11 +42,6 @@ pub trait TaskProgressStore {
 
 impl TaskProgressStore for HashMap<String, TaskProgress> {
     type Id = String;
-    fn get_progress(&self, id: &Self::Id) -> TaskProgress {
-        *self
-            .get(id)
-            .expect("task progress store should have all tasks before querying")
-    }
 
     fn init(&mut self, id: &Self::Id) {
         self.entry(id.clone()).or_insert(TaskProgress::NotStarted {

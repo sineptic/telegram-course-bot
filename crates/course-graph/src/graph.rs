@@ -82,7 +82,7 @@ impl CourseGraph {
         if self.cards[name]
             .dependencies
             .iter()
-            .any(|x| store.get_progress(x) != TaskProgress::Good)
+            .any(|x| store[x] != TaskProgress::Good)
         {
             return;
         }
@@ -95,7 +95,7 @@ impl CourseGraph {
 
     pub fn detect_recursive_fails(&self, store: &mut impl TaskProgressStore<Id = String>) {
         self.cards.keys().for_each(|name| {
-            if store.get_progress(name) == TaskProgress::Failed {
+            if store[name] == TaskProgress::Failed {
                 self.propagate_fail(name, store);
             }
         });

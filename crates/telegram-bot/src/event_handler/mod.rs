@@ -1,4 +1,4 @@
-use course_graph::progress_store::{TaskProgress, TaskProgressStore};
+use course_graph::progress_store::TaskProgress;
 use ctx::BotCtx;
 use teloxide::{Bot, prelude::Requester, types::UserId};
 use tokio::sync::oneshot;
@@ -11,6 +11,7 @@ use crate::{
 };
 
 pub(crate) mod ctx;
+mod progress_store;
 
 pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
@@ -76,7 +77,7 @@ async fn process_event(ctx: &mut BotCtx, event: Event) {
                 TaskProgress::Good | TaskProgress::Failed => {
                     if card_node.dependencies.iter().any(|dependencie| {
                         matches!(
-                            ctx.progress_store.get_progress(dependencie),
+                            ctx.progress_store[dependencie],
                             TaskProgress::NotStarted {
                                 could_be_learned: _
                             }
@@ -99,7 +100,7 @@ async fn process_event(ctx: &mut BotCtx, event: Event) {
                 } => {
                     if card_node.dependents.iter().any(|dependencie| {
                         !matches!(
-                            ctx.progress_store.get_progress(dependencie),
+                            ctx.progress_store[dependencie],
                             TaskProgress::NotStarted {
                                 could_be_learned: _
                             }

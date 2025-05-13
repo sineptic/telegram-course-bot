@@ -15,4 +15,7 @@ thiserror = "2.0.12"
 dotenvy = "0.15.7"
 
 course_graph = { path = "../course-graph" }
+s_text_input_f = { git = "https://github.com/sineptic/ssr2" }
+ssr-algorithms = { git = "https://github.com/sineptic/ssr2" }
+fsrs = "2.0.4"
 graphviz-rust.workspace = true
