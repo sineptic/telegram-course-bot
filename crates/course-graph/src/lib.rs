@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use progress_store::{TaskProgress, TaskProgressStoreExt};
+use progress_store::TaskProgressStoreExt;
 
 pub mod card;
 pub mod graph;
@@ -10,7 +8,7 @@ mod utils;
 
 pub fn generate_graph_chart(
     mut graph: dot_structures::Graph,
-    progress_store: &HashMap<String, TaskProgress>,
+    progress_store: &impl TaskProgressStoreExt,
 ) -> Vec<u8> {
     progress_store
         .generate_stmts()

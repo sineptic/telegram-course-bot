@@ -1,4 +1,4 @@
-use course_graph::progress_store::TaskProgress;
+use course_graph::progress_store::{TaskProgress, TaskProgressStore};
 use ctx::BotCtx;
 use teloxide::{Bot, prelude::Requester, types::UserId};
 use tokio::sync::oneshot;
@@ -15,11 +15,11 @@ mod progress_store;
 
 pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
-        process_event(&mut ctx, event).await;
+        handle_event(&mut ctx, event).await;
     }
 }
 
-async fn process_event(ctx: &mut BotCtx, event: Event) {
+async fn handle_event(ctx: &mut BotCtx, event: Event) {
     match event {
         Event::ReviseCard { user_id, card_name } => {
             let Some(tasks) = ctx.deque.get(&card_name.to_lowercase()) else {
@@ -94,6 +94,15 @@ async fn process_event(ctx: &mut BotCtx, event: Event) {
                         .log_err();
                         return;
                     }
+                    match progress {
+                        TaskProgress::Good => {
+                            ctx.progress_store.update_no_recursive_failed(&card_name);
+                        }
+                        TaskProgress::Failed => {
+                            ctx.progress_store.update_recursive_failed(&card_name);
+                        }
+                        _ => unreachable!(),
+                    }
                 }
                 TaskProgress::NotStarted {
                     could_be_learned: true,
@@ -118,14 +127,14 @@ async fn process_event(ctx: &mut BotCtx, event: Event) {
                         .log_err();
                         return;
                     }
+                    todo!();
                 }
                 _ => unreachable!("should not receive set event with this task progress"),
             };
-            *ctx.progress_store.get_mut(&card_name).unwrap() = progress;
             ctx.course_graph
                 .detect_recursive_fails(&mut ctx.progress_store);
 
-            Box::pin(process_event(ctx, Event::ViewGraph { user_id })).await;
+            Box::pin(handle_event(ctx, Event::ViewGraph { user_id })).await;
         }
     }
 }

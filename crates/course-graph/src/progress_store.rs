@@ -35,6 +35,7 @@ impl Default for TaskProgress {
 pub trait TaskProgressStore: for<'a> Index<&'a Self::Id, Output = TaskProgress> {
     type Id: PartialEq;
     fn init(&mut self, id: &Self::Id);
+    fn contains(&self, id: &Self::Id) -> bool;
     fn update_recursive_failed(&mut self, id: &Self::Id);
     fn update_no_recursive_failed(&mut self, id: &Self::Id);
     fn iter(&self) -> impl Iterator<Item = (&Self::Id, TaskProgress)>;
@@ -47,6 +48,9 @@ impl TaskProgressStore for HashMap<String, TaskProgress> {
         self.entry(id.clone()).or_insert(TaskProgress::NotStarted {
             could_be_learned: true,
         });
+    }
+    fn contains(&self, id: &Self::Id) -> bool {
+        self.contains_key(id)
     }
 
     fn update_recursive_failed(&mut self, id: &Self::Id) {

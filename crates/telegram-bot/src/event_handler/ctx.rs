@@ -1,13 +1,11 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    str::FromStr,
-};
+use std::{collections::BTreeMap, str::FromStr};
 
-use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
+use course_graph::{graph::CourseGraph, progress_store::TaskProgressStore};
 use graphviz_rust::dot_structures::Graph;
 use rand::{SeedableRng, rngs::StdRng};
 use teloxide::Bot;
 
+use super::progress_store::UserProgress;
 use crate::{
     interaction_types::{Task, deque},
     utils::Immutable,
@@ -15,7 +13,7 @@ use crate::{
 
 pub struct BotCtx {
     pub course_graph: Immutable<CourseGraph>,
-    pub progress_store: HashMap<String, TaskProgress>,
+    pub progress_store: UserProgress,
     base_graph: Graph,
     pub deque: BTreeMap<String, BTreeMap<u16, Task>>,
     pub rng: StdRng,
@@ -29,7 +27,7 @@ impl BotCtx {
                 println!("{err}");
                 panic!("graph parsing error");
             });
-        let mut progress_store = HashMap::new();
+        let mut progress_store = UserProgress::default();
         course_graph.init_store(&mut progress_store);
         let base_graph = course_graph.generate_graph();
 
@@ -37,6 +35,7 @@ impl BotCtx {
         let rng = StdRng::from_os_rng();
 
         check_cards_consistency(&progress_store, &deque);
+        course_graph.detect_recursive_fails(&mut progress_store);
 
         Self {
             course_graph: course_graph.into(),
@@ -55,21 +54,22 @@ impl BotCtx {
     }
 }
 
-fn check_cards_consistency(
-    progress_store: &HashMap<String, TaskProgress>,
-    deque: &BTreeMap<String, BTreeMap<u16, Task>>,
-) {
+fn check_cards_consistency<S>(progress_store: &S, deque: &BTreeMap<String, BTreeMap<u16, Task>>)
+where
+    S: TaskProgressStore<Id = String>,
+{
     let mut errors = Vec::new();
     progress_store
-        .keys()
-        .filter(|x| !deque.contains_key(*x))
-        .map(|err| format!("Graph has '{err}' card, but deque(cards.md) doesn't."))
+        .iter()
+        .map(|(id, _)| id)
+        .filter(|&id| !deque.contains_key(id))
+        .map(|id| format!("Graph has '{id}' card, but deque(cards.md) doesn't."))
         .for_each(|item| {
             errors.push(item);
         });
     deque
         .keys()
-        .filter(|x| !progress_store.contains_key(*x))
+        .filter(|x| !progress_store.contains(*x))
         .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
         .for_each(|item| {
             errors.push(item);

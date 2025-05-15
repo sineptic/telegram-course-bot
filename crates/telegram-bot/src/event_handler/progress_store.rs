@@ -20,7 +20,7 @@ async fn get_user_answer(
     Ok(rx.await.unwrap())
 }
 
-type Id = u64;
+type Id = String;
 
 #[derive(Default)]
 pub struct Task {
@@ -45,13 +45,22 @@ impl Task {
     fn could_be_repeated(&self, fsrs: &FSRS, retrievability_goal: f32, now: SystemTime) -> bool {
         self.level.next_repetition(fsrs, retrievability_goal as f64) < now
     }
+    fn should_be_repeated(&self, fsrs: &FSRS, retrievability_goal: f32, now: SystemTime) -> bool {
+        self.could_be_repeated(fsrs, retrievability_goal, now)
+            && !matches!(
+                self.progress,
+                TaskProgress::NotStarted {
+                    could_be_learned: _
+                }
+            )
+    }
     fn update_parents_info(&mut self, is_all_parents_correct: bool) {
         match self.progress {
             TaskProgress::NotStarted {
                 could_be_learned: _,
             } => {
                 self.progress = TaskProgress::NotStarted {
-                    could_be_learned: true,
+                    could_be_learned: is_all_parents_correct,
                 };
             }
             TaskProgress::Good => {
@@ -93,6 +102,14 @@ impl UserProgress {
             t.syncronize(&fsrs, self.desired_retention, SystemTime::now());
         });
     }
+    fn should_be_repeated(&mut self) -> impl Iterator<Item = &mut Task> {
+        let fsrs = self.weights.fsrs();
+        let now = SystemTime::now();
+        let desired_retention = self.desired_retention;
+        self.tasks
+            .values_mut()
+            .filter(move |t| t.should_be_repeated(&fsrs, desired_retention, now))
+    }
 }
 impl<'a> std::ops::Index<&'a Id> for UserProgress {
     type Output = TaskProgress;
@@ -105,7 +122,12 @@ impl TaskProgressStore for UserProgress {
     type Id = Id;
 
     fn init(&mut self, id: &Self::Id) {
-        self.tasks.insert(id.to_owned(), Task::default()).unwrap();
+        if let Some(_prev) = self.tasks.insert(id.to_owned(), Task::default()) {
+            panic!("each task should be initialized once, but {id} doesn't.");
+        }
+    }
+    fn contains(&self, id: &Self::Id) -> bool {
+        self.tasks.contains_key(id)
     }
 
     fn update_recursive_failed(&mut self, id: &Self::Id) {
