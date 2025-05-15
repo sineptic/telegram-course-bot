@@ -2,8 +2,9 @@ use std::{collections::HashMap, ops::Index, str::FromStr};
 
 use dot_structures::{Node, Stmt};
 use graphviz_rust::attributes::{NodeAttributes, color_name};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskProgress {
     NotStarted { could_be_learned: bool },
     Good,

@@ -2,6 +2,7 @@ use std::{collections::HashMap, error::Error, time::SystemTime};
 
 use course_graph::progress_store::{TaskProgress, TaskProgressStore};
 use fsrs::FSRS;
+use serde::{Deserialize, Serialize};
 use ssr_algorithms::fsrs::{level::RepetitionContext, weights::Weights};
 use teloxide::{Bot, types::UserId};
 
@@ -22,7 +23,7 @@ async fn get_user_answer(
 
 type Id = String;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Serialize, Deserialize)]
 pub struct Task {
     progress: TaskProgress,
     level: Level,
@@ -89,7 +90,7 @@ impl Task {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UserProgress {
     weights: Weights,
     desired_retention: f32,
@@ -99,7 +100,7 @@ impl Default for UserProgress {
     fn default() -> Self {
         Self {
             weights: Weights::default(),
-            desired_retention: 0.99999,
+            desired_retention: 0.85,
             tasks: HashMap::new(),
         }
     }

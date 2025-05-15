@@ -660,6 +660,7 @@ dependencies = [
  "chumsky",
  "dot-structures",
  "graphviz-rust",
+ "serde",
 ]
 
 [[package]]
@@ -4027,6 +4028,7 @@ dependencies = [
  "pretty_env_logger",
  "rand 0.9.1",
  "s_text_input_f",
+ "serde",
  "ssr-algorithms",
  "teloxide",
  "thiserror 2.0.12",

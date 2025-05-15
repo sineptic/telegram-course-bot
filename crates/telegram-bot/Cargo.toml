@@ -20,3 +20,4 @@ ssr-algorithms = { git = "https://github.com/sineptic/ssr2" }
 chrono = "*"
 fsrs = "2.0.4"
 graphviz-rust.workspace = true
+serde.workspace = true

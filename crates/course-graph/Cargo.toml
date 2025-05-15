@@ -8,3 +8,4 @@ dot-structures = "0.1.1"
 graphviz-rust.workspace = true
 chumsky = "0.10.0"
 ariadne = "0.5.1"
+serde.workspace = true

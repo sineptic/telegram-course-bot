@@ -4,6 +4,7 @@ members = ["crates/*"]
 
 [workspace.dependencies]
 graphviz-rust = "0.9.3"
+serde = { version = "1.0.219", features = ["derive"] }
 
 [profile.release]
 debug-assertions = true
