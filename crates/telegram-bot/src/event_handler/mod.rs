@@ -1,5 +1,6 @@
-use course_graph::progress_store::{TaskProgress, TaskProgressStore};
+use course_graph::progress_store::TaskProgress;
 use ctx::BotCtx;
+use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide::{Bot, prelude::Requester, types::UserId};
 use tokio::sync::oneshot;
 
@@ -63,74 +64,38 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
             card_name,
             progress,
         } => {
-            let Some(card_node) = ctx.course_graph.cards().get(&card_name) else {
-                send_interactions(
-                    ctx.bot(),
-                    user_id,
-                    vec![format!("There is no '{card_name}' card.").into()],
-                )
-                .await
-                .log_err();
-                return;
-            };
             match progress {
                 TaskProgress::Good | TaskProgress::Failed => {
-                    if card_node.dependencies.iter().any(|dependencie| {
-                        matches!(
-                            ctx.progress_store[dependencie],
-                            TaskProgress::NotStarted {
-                                could_be_learned: _
-                            }
-                        )
-                    }) {
+                    if matches!(
+                        ctx.progress_store[&card_name],
+                        TaskProgress::NotStarted {
+                            could_be_learned: false
+                        }
+                    ) {
                         send_interactions(
                             ctx.bot(),
                             user_id,
                             vec![
-                                format!("All '{card_name}' dependencies should be started.").into(),
+                                format!("'{card_name}' dependencies should be good to start learning new.").into(),
                             ],
                         )
                         .await
                         .log_err();
                         return;
                     }
-                    match progress {
-                        TaskProgress::Good => {
-                            ctx.progress_store.update_no_recursive_failed(&card_name);
-                        }
-                        TaskProgress::Failed => {
-                            ctx.progress_store.update_recursive_failed(&card_name);
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-                TaskProgress::NotStarted {
-                    could_be_learned: true,
-                } => {
-                    if card_node.dependents.iter().any(|dependencie| {
-                        !matches!(
-                            ctx.progress_store[dependencie],
-                            TaskProgress::NotStarted {
-                                could_be_learned: _
-                            }
-                        )
-                    }) {
-                        send_interactions(
-                            ctx.bot(),
-                            user_id,
-                            vec![
-                                format!("All '{card_name}' dependents should not be started.")
-                                    .into(),
-                            ],
-                        )
-                        .await
-                        .log_err();
-                        return;
-                    }
-                    todo!();
+                    ctx.progress_store
+                        .repetition(&card_name, |_| RepetitionContext {
+                            quality: match progress {
+                                TaskProgress::Good => Quality::Good,
+                                TaskProgress::Failed => Quality::Again,
+                                _ => unreachable!(),
+                            },
+                            review_time: chrono::Local::now(),
+                        });
                 }
                 _ => unreachable!("should not receive set event with this task progress"),
             };
+            ctx.progress_store.syncronize();
             ctx.course_graph
                 .detect_recursive_fails(&mut ctx.progress_store);
 

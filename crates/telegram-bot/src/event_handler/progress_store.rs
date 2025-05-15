@@ -2,7 +2,7 @@ use std::{collections::HashMap, error::Error, time::SystemTime};
 
 use course_graph::progress_store::{TaskProgress, TaskProgressStore};
 use fsrs::FSRS;
-use ssr_algorithms::fsrs::weights::Weights;
+use ssr_algorithms::fsrs::{level::RepetitionContext, weights::Weights};
 use teloxide::{Bot, types::UserId};
 
 use crate::{handlers::set_task_for_user, interaction_types::TelegramInteraction};
@@ -22,37 +22,32 @@ async fn get_user_answer(
 
 type Id = String;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Task {
     progress: TaskProgress,
     level: Level,
 }
 impl Task {
     fn syncronize(&mut self, fsrs: &FSRS, retrievability_goal: f32, now: SystemTime) {
-        match self.could_be_repeated(fsrs, retrievability_goal, now) {
-            true => match self.progress {
-                TaskProgress::NotStarted {
-                    could_be_learned: _,
-                } => (),
-                _ => self.progress = TaskProgress::Failed,
-            },
-            false => match self.progress {
-                TaskProgress::Good | TaskProgress::RecursiveFailed => (),
-                _ => unreachable!(),
-            },
-        }
-    }
-    fn could_be_repeated(&self, fsrs: &FSRS, retrievability_goal: f32, now: SystemTime) -> bool {
-        self.level.next_repetition(fsrs, retrievability_goal as f64) < now
-    }
-    fn should_be_repeated(&self, fsrs: &FSRS, retrievability_goal: f32, now: SystemTime) -> bool {
-        self.could_be_repeated(fsrs, retrievability_goal, now)
-            && !matches!(
-                self.progress,
-                TaskProgress::NotStarted {
-                    could_be_learned: _
+        let time_to_repeat = self.level.next_repetition(fsrs, retrievability_goal as f64) < now;
+        match self.progress {
+            TaskProgress::NotStarted {
+                could_be_learned: false,
+            } => assert!(time_to_repeat),
+            TaskProgress::Good | TaskProgress::RecursiveFailed => {
+                if time_to_repeat {
+                    self.progress = TaskProgress::Failed
                 }
-            )
+            }
+            TaskProgress::Failed
+            | TaskProgress::NotStarted {
+                could_be_learned: true,
+            } => {
+                if !self.level.failed() {
+                    self.progress = TaskProgress::Good
+                }
+            }
+        }
     }
     fn update_parents_info(&mut self, is_all_parents_correct: bool) {
         match self.progress {
@@ -76,11 +71,25 @@ impl Task {
             }
         }
     }
-    fn is_correct(&self) -> bool {
-        matches!(self.progress, TaskProgress::Good)
+    fn add_repetition(&mut self, repetition: RepetitionContext) -> Result<(), ()> {
+        match self.progress {
+            TaskProgress::NotStarted {
+                could_be_learned: false,
+            }
+            | TaskProgress::Good => Err(()),
+            TaskProgress::Failed
+            | TaskProgress::NotStarted {
+                could_be_learned: true,
+            }
+            | TaskProgress::RecursiveFailed => {
+                self.level.add_repetition(repetition);
+                Ok(())
+            }
+        }
     }
 }
 
+#[derive(Debug)]
 pub struct UserProgress {
     weights: Weights,
     desired_retention: f32,
@@ -90,7 +99,7 @@ impl Default for UserProgress {
     fn default() -> Self {
         Self {
             weights: Weights::default(),
-            desired_retention: 0.85,
+            desired_retention: 0.99999,
             tasks: HashMap::new(),
         }
     }
@@ -102,13 +111,12 @@ impl UserProgress {
             t.syncronize(&fsrs, self.desired_retention, SystemTime::now());
         });
     }
-    fn should_be_repeated(&mut self) -> impl Iterator<Item = &mut Task> {
-        let fsrs = self.weights.fsrs();
-        let now = SystemTime::now();
-        let desired_retention = self.desired_retention;
+    pub fn repetition(&mut self, id: &Id, check_knowledge: impl FnOnce(&Id) -> RepetitionContext) {
         self.tasks
-            .values_mut()
-            .filter(move |t| t.should_be_repeated(&fsrs, desired_retention, now))
+            .get_mut(id)
+            .unwrap()
+            .add_repetition(check_knowledge(id))
+            .expect("HINT: repeated task can't be already good")
     }
 }
 impl<'a> std::ops::Index<&'a Id> for UserProgress {
