@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use chrono::{DateTime, Local};
 use course_graph::progress_store::TaskProgress;
 use ctx::BotCtx;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
@@ -56,7 +57,14 @@ async fn get_card_answer(
     get_user_answer(bot, user_id, interactions, answers).await
 }
 
+fn now(start: DateTime<Local>) -> DateTime<Local> {
+    let now = Local::now();
+    let diff = now - start;
+    start + diff * 3600
+}
+
 async fn handle_event(ctx: &mut BotCtx, event: Event) {
+    let start_time = ctx.start;
     match event {
         Event::ReviseCard { user_id, card_name } => {
             let Some(tasks) = ctx.deque.get(&card_name.to_lowercase()) else {
@@ -126,13 +134,13 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                                 TaskProgress::Failed => Quality::Again,
                                 _ => unreachable!(),
                             },
-                            review_time: chrono::Local::now(),
+                            review_time: now(start_time),
                         })
                         .await;
                 }
                 _ => unreachable!("should not receive set event with this task progress"),
             };
-            ctx.progress_store.syncronize();
+            ctx.progress_store.syncronize(now(start_time).into());
             ctx.course_graph
                 .detect_recursive_fails(&mut ctx.progress_store);
 
@@ -184,7 +192,7 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                     };
                     RepetitionContext {
                         quality,
-                        review_time: chrono::Local::now(),
+                        review_time: now(start_time),
                     }
                 })
                 .await;

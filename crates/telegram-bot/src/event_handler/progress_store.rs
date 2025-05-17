@@ -92,10 +92,10 @@ impl Default for UserProgress {
     }
 }
 impl UserProgress {
-    pub fn syncronize(&mut self) {
+    pub fn syncronize(&mut self, now: SystemTime) {
         let fsrs = self.weights.fsrs();
         self.tasks.values_mut().for_each(|t| {
-            t.syncronize(&fsrs, self.desired_retention, SystemTime::now());
+            t.syncronize(&fsrs, self.desired_retention, now);
         });
     }
     pub async fn repetition(

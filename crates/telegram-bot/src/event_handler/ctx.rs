@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, str::FromStr};
 
+use chrono::{DateTime, Local};
 use course_graph::{graph::CourseGraph, progress_store::TaskProgressStore};
 use graphviz_rust::dot_structures::Graph;
 use rand::{SeedableRng, rngs::StdRng};
@@ -14,6 +15,7 @@ use crate::{
 pub struct BotCtx {
     pub course_graph: Immutable<CourseGraph>,
     pub progress_store: UserProgress,
+    pub start: DateTime<Local>,
     base_graph: Graph,
     pub deque: BTreeMap<String, BTreeMap<u16, Task>>,
     pub rng: StdRng,
@@ -33,6 +35,7 @@ impl BotCtx {
 
         let deque = deque::from_str(&std::fs::read_to_string("cards.md").unwrap(), true).unwrap();
         let rng = StdRng::from_os_rng();
+        let start = chrono::Local::now();
 
         check_cards_consistency(&progress_store, &deque);
         course_graph.detect_recursive_fails(&mut progress_store);
@@ -44,6 +47,7 @@ impl BotCtx {
             deque,
             rng,
             bot,
+            start,
         }
     }
     pub fn base_graph(&self) -> Graph {
