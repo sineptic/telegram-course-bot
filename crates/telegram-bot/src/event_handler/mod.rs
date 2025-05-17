@@ -70,17 +70,7 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
             ctx.progress_store.syncronize(now(start_time).into());
             ctx.course_graph
                 .detect_recursive_fails(&mut ctx.progress_store);
-            let Some(tasks) = ctx.deque.get(&card_name.to_lowercase()) else {
-                send_interactions(
-                    ctx.bot(),
-                    user_id,
-                    vec!["Card with this name not found".into()],
-                )
-                .await
-                .log_err();
-                return;
-            };
-            let rcx = handle_revise(
+            if let Some(rcx) = handle_revise(
                 &card_name,
                 ctx.bot(),
                 user_id,
@@ -88,10 +78,12 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                 &ctx.deque,
                 &mut ctx.rng,
             )
-            .await;
-            ctx.progress_store
-                .repetition(&card_name, async |_| rcx)
-                .await;
+            .await
+            {
+                ctx.progress_store
+                    .repetition(&card_name, async |_| rcx)
+                    .await;
+            }
         }
 
         Event::ViewGraph { user_id } => {
@@ -172,6 +164,7 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                         &mut ctx.rng,
                     )
                     .await
+                    .unwrap()
                 })
                 .await;
             if a.is_none() {
@@ -189,13 +182,25 @@ async fn handle_revise(
     start_time: DateTime<Local>,
     ctx_deque: &std::collections::BTreeMap<String, std::collections::BTreeMap<u16, Task>>,
     ctx_rng: &mut rand::prelude::StdRng,
-) -> RepetitionContext {
+) -> Option<RepetitionContext> {
     let Task {
         question,
         options,
         answer,
         explanation,
-    } = card::random_task(&ctx_deque[id], ctx_rng);
+    } = card::random_task(
+        {
+            if let Some(x) = ctx_deque.get(id) {
+                x
+            } else {
+                send_interactions(bot, user_id, vec!["Card with this name not found".into()])
+                    .await
+                    .log_err();
+                return None;
+            }
+        },
+        ctx_rng,
+    );
     let mut correct = false;
     if let Some(user_answer) =
         get_card_answer(bot.clone(), user_id, question.clone(), options.clone())
@@ -229,43 +234,8 @@ async fn handle_revise(
     } else {
         Quality::Again
     };
-    RepetitionContext {
+    Some(RepetitionContext {
         quality,
         review_time: now(start_time),
-    }
-}
-
-async fn event_end_handler(
-    bot: Bot,
-    rx: oneshot::Receiver<Vec<String>>,
-    user_id: UserId,
-    correct: String,
-    explanation: Option<Vec<telegram_interaction::QuestionElement>>,
-) {
-    // FIXME
-    let Ok(result) = rx.await else {
-        log::warn!("todo: handle user input cancellation");
-        return;
-    };
-    let user_answer = result.last().unwrap().clone();
-    if user_answer == correct {
-        bot.send_message(user_id, "Correct!").await.log_err();
-        log::debug!("user {user_id} answer correctly");
-    } else {
-        bot.send_message(user_id, format!("Wrong. Answer is {correct}"))
-            .await
-            .log_err();
-        if let Some(explanation) = explanation {
-            let messages = explanation
-                .into_iter()
-                .map(|x| x.into())
-                .collect::<Vec<TelegramInteraction>>();
-            let (tx, rx) = oneshot::channel();
-            set_task_for_user(bot, user_id, messages, tx)
-                .await
-                .log_err();
-            rx.await.unwrap();
-        }
-        log::debug!("user {user_id} answer wrong");
-    }
+    })
 }
