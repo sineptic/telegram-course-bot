@@ -16,7 +16,8 @@ pub struct Task {
 }
 impl Task {
     fn syncronize(&mut self, fsrs: &FSRS, retrievability_goal: f32, now: SystemTime) {
-        let time_to_repeat = self.level.next_repetition(fsrs, retrievability_goal as f64) < now;
+        let next_repetition = self.level.next_repetition(fsrs, retrievability_goal as f64);
+        let time_to_repeat = next_repetition < now;
         match self.progress {
             TaskProgress::NotStarted {
                 could_be_learned: false,
@@ -30,7 +31,7 @@ impl Task {
             | TaskProgress::NotStarted {
                 could_be_learned: true,
             } => {
-                if !self.level.failed() {
+                if !self.level.failed() && !time_to_repeat {
                     self.progress = TaskProgress::Good
                 }
             }

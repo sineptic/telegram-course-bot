@@ -41,7 +41,7 @@ async fn get_user_answer(
         tx,
     )
     .await?;
-    let Some([answer]): Option<[String; 1]> = rx.await.map(|x| x.try_into().unwrap()).ok() else {
+    let Some(answer) = rx.await.map(|mut x| x.pop().unwrap()).ok() else {
         return Ok(None);
     };
     Ok(Some(answer))
@@ -60,13 +60,16 @@ async fn get_card_answer(
 fn now(start: DateTime<Local>) -> DateTime<Local> {
     let now = Local::now();
     let diff = now - start;
-    start + diff * 3600
+    start + diff * 3600 * 24
 }
 
 async fn handle_event(ctx: &mut BotCtx, event: Event) {
     let start_time = ctx.start;
     match event {
         Event::ReviseCard { user_id, card_name } => {
+            ctx.progress_store.syncronize(now(start_time).into());
+            ctx.course_graph
+                .detect_recursive_fails(&mut ctx.progress_store);
             let Some(tasks) = ctx.deque.get(&card_name.to_lowercase()) else {
                 send_interactions(
                     ctx.bot(),
@@ -92,6 +95,9 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
         }
 
         Event::ViewGraph { user_id } => {
+            ctx.progress_store.syncronize(now(start_time).into());
+            ctx.course_graph
+                .detect_recursive_fails(&mut ctx.progress_store);
             let graph_image =
                 course_graph::generate_graph_chart(ctx.base_graph(), &ctx.progress_store);
             send_interactions(
@@ -108,6 +114,9 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
             card_name,
             progress,
         } => {
+            ctx.progress_store.syncronize(now(start_time).into());
+            ctx.course_graph
+                .detect_recursive_fails(&mut ctx.progress_store);
             match progress {
                 TaskProgress::Good | TaskProgress::Failed => {
                     if matches!(
@@ -147,6 +156,9 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
             Box::pin(handle_event(ctx, Event::ViewGraph { user_id })).await;
         }
         Event::Revise { user_id } => {
+            ctx.progress_store.syncronize(now(start_time).into());
+            ctx.course_graph
+                .detect_recursive_fails(&mut ctx.progress_store);
             let bot = ctx.bot();
             let a = ctx
                 .progress_store
@@ -169,7 +181,7 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                         }
                     }
                     if !correct {
-                        bot.send_message(user_id, format!("Wrong. Answer is {correct}"))
+                        bot.send_message(user_id, format!("Wrong. Answer is {}", options[*answer]))
                             .await
                             .log_err();
                         if let Some(explanation) = explanation {
