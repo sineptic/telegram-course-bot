@@ -63,13 +63,8 @@ impl Task {
         match self.progress {
             TaskProgress::NotStarted {
                 could_be_learned: false,
-            }
-            | TaskProgress::Good => Err(()),
-            TaskProgress::Failed
-            | TaskProgress::NotStarted {
-                could_be_learned: true,
-            }
-            | TaskProgress::RecursiveFailed => {
+            } => Err(()),
+            _ => {
                 self.level.add_repetition(repetition);
                 Ok(())
             }
@@ -108,7 +103,7 @@ impl UserProgress {
             .get_mut(id)
             .unwrap()
             .add_repetition(check_knowledge(id).await)
-            .expect("HINT: repeated task can't be already good")
+            .expect("HINT: you cant revice card that not started and have bad known(for user) dependencies")
     }
     pub async fn revise(
         &mut self,

@@ -80,18 +80,18 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                 .log_err();
                 return;
             };
-            let task = card::random_task(tasks, &mut ctx.rng).clone();
-            let (tx, rx) = oneshot::channel();
-            tokio::spawn(event_end_handler(
+            let rcx = handle_revise(
+                &card_name,
                 ctx.bot(),
-                rx,
                 user_id,
-                task.correct_answer().to_owned(),
-                task.explanation.clone(),
-            ));
-            set_task_for_user(ctx.bot(), user_id, task.interactions(), tx)
-                .await
-                .log_err();
+                start_time,
+                &ctx.deque,
+                &mut ctx.rng,
+            )
+            .await;
+            ctx.progress_store
+                .repetition(&card_name, async |_| rcx)
+                .await;
         }
 
         Event::ViewGraph { user_id } => {
@@ -163,49 +163,15 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
             let a = ctx
                 .progress_store
                 .revise(async |id| {
-                    let Task {
-                        question,
-                        options,
-                        answer,
-                        explanation,
-                    } = card::random_task(&ctx.deque[id], &mut ctx.rng);
-                    let mut correct = false;
-                    if let Some(user_answer) =
-                        get_card_answer(bot.clone(), user_id, question.clone(), options.clone())
-                            .await
-                            .unwrap()
-                    {
-                        if user_answer == options[*answer] {
-                            correct = true;
-                            bot.send_message(user_id, "Correct!").await.log_err();
-                        }
-                    }
-                    if !correct {
-                        bot.send_message(user_id, format!("Wrong. Answer is {}", options[*answer]))
-                            .await
-                            .log_err();
-                        if let Some(explanation) = explanation {
-                            send_interactions(
-                                bot.clone(),
-                                user_id,
-                                explanation
-                                    .iter()
-                                    .map(|x| x.clone().into())
-                                    .collect::<Vec<TelegramInteraction>>(),
-                            )
-                            .await
-                            .log_err();
-                        }
-                    }
-                    let quality = if correct {
-                        Quality::Good
-                    } else {
-                        Quality::Again
-                    };
-                    RepetitionContext {
-                        quality,
-                        review_time: now(start_time),
-                    }
+                    handle_revise(
+                        id,
+                        bot.clone(),
+                        user_id,
+                        start_time,
+                        &ctx.deque,
+                        &mut ctx.rng,
+                    )
+                    .await
                 })
                 .await;
             if a.is_none() {
@@ -214,6 +180,58 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                     .log_err();
             }
         }
+    }
+}
+async fn handle_revise(
+    id: &String,
+    bot: Bot,
+    user_id: UserId,
+    start_time: DateTime<Local>,
+    ctx_deque: &std::collections::BTreeMap<String, std::collections::BTreeMap<u16, Task>>,
+    ctx_rng: &mut rand::prelude::StdRng,
+) -> RepetitionContext {
+    let Task {
+        question,
+        options,
+        answer,
+        explanation,
+    } = card::random_task(&ctx_deque[id], ctx_rng);
+    let mut correct = false;
+    if let Some(user_answer) =
+        get_card_answer(bot.clone(), user_id, question.clone(), options.clone())
+            .await
+            .unwrap()
+    {
+        if user_answer == options[*answer] {
+            correct = true;
+            bot.send_message(user_id, "Correct!").await.log_err();
+        }
+    }
+    if !correct {
+        bot.send_message(user_id, format!("Wrong. Answer is {}", options[*answer]))
+            .await
+            .log_err();
+        if let Some(explanation) = explanation {
+            send_interactions(
+                bot.clone(),
+                user_id,
+                explanation
+                    .iter()
+                    .map(|x| x.clone().into())
+                    .collect::<Vec<TelegramInteraction>>(),
+            )
+            .await
+            .log_err();
+        }
+    }
+    let quality = if correct {
+        Quality::Good
+    } else {
+        Quality::Again
+    };
+    RepetitionContext {
+        quality,
+        review_time: now(start_time),
     }
 }
 
