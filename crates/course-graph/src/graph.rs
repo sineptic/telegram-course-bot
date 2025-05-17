@@ -37,7 +37,7 @@ impl CourseGraph {
             )
     }
     pub fn generate_graph(&self) -> Graph {
-        Graph::DiGraph {
+        Graph::Graph {
             id: id_from_string("G"),
             strict: true,
             stmts: self.generate_stmts().collect(),
