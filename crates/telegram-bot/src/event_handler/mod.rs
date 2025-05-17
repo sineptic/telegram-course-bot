@@ -168,7 +168,7 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                         options,
                         answer,
                         explanation,
-                    } = ctx.deque[id].first_key_value().unwrap().1;
+                    } = card::random_task(&ctx.deque[id], &mut ctx.rng);
                     let mut correct = false;
                     if let Some(user_answer) =
                         get_card_answer(bot.clone(), user_id, question.clone(), options.clone())
