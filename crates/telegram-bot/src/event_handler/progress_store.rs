@@ -1,25 +1,11 @@
-use std::{collections::HashMap, error::Error, time::SystemTime};
+use std::{collections::HashMap, time::SystemTime};
 
 use course_graph::progress_store::{TaskProgress, TaskProgressStore};
 use fsrs::FSRS;
 use serde::{Deserialize, Serialize};
 use ssr_algorithms::fsrs::{level::RepetitionContext, weights::Weights};
-use teloxide::{Bot, types::UserId};
 
-use crate::{handlers::set_task_for_user, interaction_types::TelegramInteraction};
-
-type Response = Vec<String>;
 type Level = ssr_algorithms::fsrs::level::Level;
-
-async fn get_user_answer(
-    bot: Bot,
-    user_id: UserId,
-    interactions: Vec<TelegramInteraction>,
-) -> Result<Response, Box<dyn Error + Send + Sync>> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    set_task_for_user(bot, user_id, interactions, tx).await?;
-    Ok(rx.await.unwrap())
-}
 
 type Id = String;
 
@@ -112,12 +98,31 @@ impl UserProgress {
             t.syncronize(&fsrs, self.desired_retention, SystemTime::now());
         });
     }
-    pub fn repetition(&mut self, id: &Id, check_knowledge: impl FnOnce(&Id) -> RepetitionContext) {
+    pub async fn repetition(
+        &mut self,
+        id: &Id,
+        check_knowledge: impl AsyncFnOnce(&Id) -> RepetitionContext,
+    ) {
         self.tasks
             .get_mut(id)
             .unwrap()
-            .add_repetition(check_knowledge(id))
+            .add_repetition(check_knowledge(id).await)
             .expect("HINT: repeated task can't be already good")
+    }
+    pub async fn revise(
+        &mut self,
+        check_knowledge: impl AsyncFnOnce(&Id) -> RepetitionContext,
+    ) -> Option<()> {
+        if let Some((id, task)) = self
+            .tasks
+            .iter_mut()
+            .find(|(_id, task)| task.progress == TaskProgress::Failed)
+        {
+            task.add_repetition(check_knowledge(id).await).unwrap();
+            Some(())
+        } else {
+            None
+        }
     }
 }
 impl<'a> std::ops::Index<&'a Id> for UserProgress {

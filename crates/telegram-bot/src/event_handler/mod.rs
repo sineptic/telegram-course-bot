@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use course_graph::progress_store::TaskProgress;
 use ctx::BotCtx;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
@@ -7,7 +9,7 @@ use tokio::sync::oneshot;
 use super::{Event, EventReceiver};
 use crate::{
     handlers::{send_interactions, set_task_for_user},
-    interaction_types::*,
+    interaction_types::{telegram_interaction::QuestionElement, *},
     utils::ResultExt,
 };
 
@@ -18,6 +20,40 @@ pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
         handle_event(&mut ctx, event).await;
     }
+}
+
+async fn get_user_answer(
+    bot: Bot,
+    user_id: UserId,
+    interactions: impl IntoIterator<Item = QuestionElement>,
+    answers: Vec<String>,
+) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    set_task_for_user(
+        bot,
+        user_id,
+        interactions
+            .into_iter()
+            .map(|x| x.into())
+            .chain([TelegramInteraction::OneOf(answers)])
+            .collect(),
+        tx,
+    )
+    .await?;
+    let Some([answer]): Option<[String; 1]> = rx.await.map(|x| x.try_into().unwrap()).ok() else {
+        return Ok(None);
+    };
+    Ok(Some(answer))
+}
+
+async fn get_card_answer(
+    bot: Bot,
+    user_id: UserId,
+    interactions: impl IntoIterator<Item = QuestionElement>,
+    answers: Vec<String>,
+) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+    // TODO: add 'I dont know' option
+    get_user_answer(bot, user_id, interactions, answers).await
 }
 
 async fn handle_event(ctx: &mut BotCtx, event: Event) {
@@ -84,14 +120,15 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                         return;
                     }
                     ctx.progress_store
-                        .repetition(&card_name, |_| RepetitionContext {
+                        .repetition(&card_name, async |_| RepetitionContext {
                             quality: match progress {
                                 TaskProgress::Good => Quality::Good,
                                 TaskProgress::Failed => Quality::Again,
                                 _ => unreachable!(),
                             },
                             review_time: chrono::Local::now(),
-                        });
+                        })
+                        .await;
                 }
                 _ => unreachable!("should not receive set event with this task progress"),
             };
@@ -100,6 +137,62 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                 .detect_recursive_fails(&mut ctx.progress_store);
 
             Box::pin(handle_event(ctx, Event::ViewGraph { user_id })).await;
+        }
+        Event::Revise { user_id } => {
+            let bot = ctx.bot();
+            let a = ctx
+                .progress_store
+                .revise(async |id| {
+                    let Task {
+                        question,
+                        options,
+                        answer,
+                        explanation,
+                    } = ctx.deque[id].first_key_value().unwrap().1;
+                    let mut correct = false;
+                    if let Some(user_answer) =
+                        get_card_answer(bot.clone(), user_id, question.clone(), options.clone())
+                            .await
+                            .unwrap()
+                    {
+                        if user_answer == options[*answer] {
+                            correct = true;
+                            bot.send_message(user_id, "Correct!").await.log_err();
+                        }
+                    }
+                    if !correct {
+                        bot.send_message(user_id, format!("Wrong. Answer is {correct}"))
+                            .await
+                            .log_err();
+                        if let Some(explanation) = explanation {
+                            send_interactions(
+                                bot.clone(),
+                                user_id,
+                                explanation
+                                    .iter()
+                                    .map(|x| x.clone().into())
+                                    .collect::<Vec<TelegramInteraction>>(),
+                            )
+                            .await
+                            .log_err();
+                        }
+                    }
+                    let quality = if correct {
+                        Quality::Good
+                    } else {
+                        Quality::Again
+                    };
+                    RepetitionContext {
+                        quality,
+                        review_time: chrono::Local::now(),
+                    }
+                })
+                .await;
+            if a.is_none() {
+                bot.send_message(user_id, "You don't have card to revise.")
+                    .await
+                    .log_err();
+            }
         }
     }
 }

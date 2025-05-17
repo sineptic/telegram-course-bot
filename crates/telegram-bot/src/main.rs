@@ -40,6 +40,9 @@ enum Event {
         card_name: String,
         progress: TaskProgress,
     },
+    Revise {
+        user_id: UserId,
+    },
 }
 type EventSender = Arc<tokio::sync::mpsc::Sender<Event>>;
 type EventReceiver = tokio::sync::mpsc::Receiver<Event>;
