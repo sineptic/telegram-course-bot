@@ -27,6 +27,7 @@ pub enum Command {
     Help,
     Set(String, TaskProgress),
     Revise,
+    Clear,
     #[command(hide)]
     Start,
 }

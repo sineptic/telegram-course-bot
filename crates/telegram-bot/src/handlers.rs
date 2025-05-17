@@ -51,6 +51,9 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
         Ok(Command::Revise) => {
             events.send(Event::Revise { user_id }).await?;
         }
+        Ok(Command::Clear) => {
+            events.send(Event::Clear { user_id }).await?;
+        }
 
         Err(_) => {
             let mut state = STATE.lock().await;

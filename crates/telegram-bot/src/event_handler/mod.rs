@@ -3,6 +3,7 @@ use std::error::Error;
 use chrono::{DateTime, Local};
 use course_graph::progress_store::TaskProgress;
 use ctx::BotCtx;
+use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide::{Bot, prelude::Requester, types::UserId};
 use tokio::sync::oneshot;
@@ -172,6 +173,10 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                     .await
                     .log_err();
             }
+        }
+        Event::Clear { user_id } => {
+            ctx.progress_store = UserProgress::default();
+            ctx.course_graph.init_store(&mut ctx.progress_store);
         }
     }
 }

@@ -43,6 +43,9 @@ enum Event {
     Revise {
         user_id: UserId,
     },
+    Clear {
+        user_id: UserId,
+    },
 }
 type EventSender = Arc<tokio::sync::mpsc::Sender<Event>>;
 type EventReceiver = tokio::sync::mpsc::Receiver<Event>;
