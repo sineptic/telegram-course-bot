@@ -10,9 +10,11 @@ pub struct Task {
 }
 
 impl Task {
+    #[allow(unused)]
     pub fn correct_answer(&self) -> &str {
         &self.options[self.answer]
     }
+    #[allow(unused)]
     pub fn interactions(&self) -> Vec<TelegramInteraction> {
         let mut interactions = Vec::new();
         for element in &self.question {

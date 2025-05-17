@@ -6,7 +6,6 @@ use ctx::BotCtx;
 use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide::{Bot, prelude::Requester, types::UserId};
-use tokio::sync::oneshot;
 
 use super::{Event, EventReceiver};
 use crate::{
@@ -174,7 +173,7 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                     .log_err();
             }
         }
-        Event::Clear { user_id } => {
+        Event::Clear { user_id: _ } => {
             ctx.progress_store = UserProgress::default();
             ctx.course_graph.init_store(&mut ctx.progress_store);
         }
@@ -211,11 +210,10 @@ async fn handle_revise(
         get_card_answer(bot.clone(), user_id, question.clone(), options.clone())
             .await
             .unwrap()
+        && user_answer == options[*answer]
     {
-        if user_answer == options[*answer] {
-            correct = true;
-            bot.send_message(user_id, "Correct!").await.log_err();
-        }
+        correct = true;
+        bot.send_message(user_id, "Correct!").await.log_err();
     }
     if !correct {
         bot.send_message(user_id, format!("Wrong. Answer is {}", options[*answer]))

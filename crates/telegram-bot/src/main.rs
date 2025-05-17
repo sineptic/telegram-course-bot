@@ -44,6 +44,7 @@ enum Event {
         user_id: UserId,
     },
     Clear {
+        #[allow(unused)]
         user_id: UserId,
     },
 }
