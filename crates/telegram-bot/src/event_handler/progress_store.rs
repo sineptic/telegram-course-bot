@@ -94,7 +94,7 @@ impl UserProgress {
             t.syncronize(&fsrs, self.desired_retention, now);
         });
     }
-    pub async fn repetition(&mut self, id: &Id, repetition: RepetitionContext) {
+    pub fn repetition(&mut self, id: &Id, repetition: RepetitionContext) {
         self.tasks
             .get_mut(id)
             .unwrap()

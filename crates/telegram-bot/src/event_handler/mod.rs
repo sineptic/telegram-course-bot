@@ -84,7 +84,7 @@ async fn handle_event(start_time: DateTime<Local>, bot: Bot, ctx: Ctx, event: Ev
                 let ctx = ctx.deref_mut();
                 let mut progress_store = ctx.progress_store.lock().await;
                 let progress_store = progress_store.deref_mut();
-                progress_store.repetition(&card_name, rcx).await;
+                progress_store.repetition(&card_name, rcx);
             }
         }
 
