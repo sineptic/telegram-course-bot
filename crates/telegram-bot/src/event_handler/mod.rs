@@ -1,28 +1,61 @@
-use std::{
-    error::Error,
-    ops::{Deref, DerefMut},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, error::Error, str::FromStr, sync::LazyLock};
 
 use chrono::{DateTime, Local};
-use course_graph::progress_store::TaskProgress;
-use ctx::BotCtx;
+use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
+use dashmap::DashMap;
 use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide::{Bot, prelude::Requester, types::UserId};
-use tokio::sync::Mutex;
 
 use super::{Event, EventReceiver};
 use crate::{
     handlers::{send_interactions, set_task_for_user},
     interaction_types::{telegram_interaction::QuestionElement, *},
-    utils::ResultExt,
+    utils::{Immutable, ResultExt},
 };
 
-pub(crate) mod ctx;
 mod progress_store;
 
-type Ctx = Arc<Mutex<BotCtx>>;
+static PROGRESS_STORE: LazyLock<DashMap<UserId, UserProgress>> = LazyLock::new(DashMap::new);
+static COURSE_GRAPH: LazyLock<Immutable<CourseGraph>> = LazyLock::new(|| {
+    CourseGraph::from_str(&std::fs::read_to_string("graph").unwrap())
+        .unwrap_or_else(|err| {
+            println!("{err}");
+            panic!("graph parsing error");
+        })
+        .into()
+});
+static DEFAULT_USER_PROGRESS: LazyLock<Immutable<UserProgress>> = LazyLock::new(|| {
+    let mut user_progress = UserProgress::default();
+    COURSE_GRAPH.init_store(&mut user_progress);
+    user_progress.into()
+});
+static DEQUE: LazyLock<Immutable<BTreeMap<String, BTreeMap<u16, Task>>>> = LazyLock::new(|| {
+    let deque = deque::from_str(&std::fs::read_to_string("cards.md").unwrap(), true).unwrap();
+    let mut errors = Vec::new();
+    COURSE_GRAPH
+        .cards()
+        .keys()
+        .filter(|&id| !deque.contains_key(id))
+        .map(|id| format!("Graph has '{id}' card, but deque(cards.md) doesn't."))
+        .for_each(|item| {
+            errors.push(item);
+        });
+    deque
+        .keys()
+        .filter(|x| !COURSE_GRAPH.cards().contains_key(*x))
+        .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
+        .for_each(|item| {
+            errors.push(item);
+        });
+    if !errors.is_empty() {
+        panic!(
+            "Cards in deque(cards.md) and graph(graph) are different.\n{}",
+            errors.join("\n")
+        );
+    }
+    deque.into()
+});
 
 async fn get_user_answer(
     bot: Bot,
@@ -58,46 +91,57 @@ async fn get_card_answer(
     get_user_answer(bot, user_id, interactions, answers).await
 }
 
-fn now(start: DateTime<Local>) -> DateTime<Local> {
+fn now() -> DateTime<Local> {
+    static START_TIME: LazyLock<Immutable<DateTime<Local>>> = LazyLock::new(|| Local::now().into());
     let now = Local::now();
-    let diff = now - start;
-    start + diff * 3600 * 24
+    let diff = now - **START_TIME;
+    **START_TIME + diff * 3600 * 24
 }
 
-pub(crate) async fn event_handler(ctx: BotCtx, bot: Bot, mut rx: EventReceiver) {
-    let start = chrono::Local::now();
-    let ctx = Arc::new(Mutex::new(ctx));
+pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
-        handle_event(start, bot.clone(), ctx.clone(), event).await;
+        handle_event(bot.clone(), event).await;
     }
 }
 
-async fn handle_event(start_time: DateTime<Local>, bot: Bot, ctx: Ctx, event: Event) {
+async fn handle_event(bot: Bot, event: Event) {
     match event {
         Event::ReviseCard { user_id, card_name } => {
-            syncronize(start_time, ctx.clone()).await;
+            syncronize(user_id);
+            if matches!(
+                PROGRESS_STORE
+                    .entry(user_id)
+                    .or_insert_with(|| DEFAULT_USER_PROGRESS.clone())[&card_name],
+                TaskProgress::NotStarted {
+                    could_be_learned: false
+                }
+            ) {
+                send_interactions(
+                    bot.clone(),
+                    user_id,
+                    vec!["You should learn all dependencies before starting new card.".into()],
+                )
+                .await
+                .log_err();
+                return;
+            }
 
-            if let Some(rcx) =
-                handle_revise(&card_name, bot, user_id, start_time, ctx.clone()).await
-            {
-                let mut ctx = ctx.lock().await;
-                let ctx = ctx.deref_mut();
-                let mut progress_store = ctx.progress_store.lock().await;
-                let progress_store = progress_store.deref_mut();
-                progress_store.repetition(&card_name, rcx);
+            if let Some(rcx) = handle_revise(&card_name, bot, user_id).await {
+                PROGRESS_STORE
+                    .entry(user_id)
+                    .or_insert_with(|| DEFAULT_USER_PROGRESS.clone())
+                    .repetition(&card_name, rcx);
             }
         }
 
         Event::ViewGraph { user_id } => {
-            syncronize(start_time, ctx.clone()).await;
-            let graph = {
-                let mut ctx = ctx.lock().await;
-                let ctx = ctx.deref_mut();
-                course_graph::generate_graph(
-                    ctx.base_graph(),
-                    ctx.progress_store.lock().await.deref(),
-                )
-            };
+            syncronize(user_id);
+            let graph = course_graph::generate_graph(
+                COURSE_GRAPH.generate_graph(),
+                &*PROGRESS_STORE
+                    .entry(user_id)
+                    .or_insert_with(|| DEFAULT_USER_PROGRESS.clone()),
+            );
 
             tokio::spawn(async move {
                 let graph_image =
@@ -115,17 +159,11 @@ async fn handle_event(start_time: DateTime<Local>, bot: Bot, ctx: Ctx, event: Ev
             });
         }
         Event::Revise { user_id } => {
-            // FIXME: 2 users can't revise at the same time
-            syncronize(start_time, ctx.clone()).await;
-            let progress_store = ctx.lock().await.progress_store.clone();
-            let a = progress_store
-                .lock()
-                .await
-                .revise(async |id| {
-                    handle_revise(id, bot.clone(), user_id, start_time, ctx)
-                        .await
-                        .unwrap()
-                })
+            syncronize(user_id);
+            let a = PROGRESS_STORE
+                .entry(user_id)
+                .or_insert_with(|| DEFAULT_USER_PROGRESS.clone())
+                .revise(async |id| handle_revise(id, bot.clone(), user_id).await.unwrap())
                 .await;
             if a.is_none() {
                 bot.send_message(user_id, "You don't have card to revise.")
@@ -134,12 +172,7 @@ async fn handle_event(start_time: DateTime<Local>, bot: Bot, ctx: Ctx, event: Ev
             }
         }
         Event::Clear { user_id } => {
-            let mut ctx = ctx.lock().await;
-            let ctx = ctx.deref_mut();
-            let mut progress_store = ctx.progress_store.lock().await;
-            let progress_store = progress_store.deref_mut();
-            *progress_store = UserProgress::default();
-            ctx.course_graph.init_store(progress_store);
+            PROGRESS_STORE.insert(user_id, DEFAULT_USER_PROGRESS.clone());
 
             tokio::spawn(async move {
                 send_interactions(bot, user_id, vec!["Progress cleared.".into()])
@@ -150,49 +183,24 @@ async fn handle_event(start_time: DateTime<Local>, bot: Bot, ctx: Ctx, event: Ev
     }
 }
 
-async fn syncronize(start_time: DateTime<Local>, ctx: Arc<Mutex<BotCtx>>) {
-    let mut ctx = ctx.lock().await;
-    let ctx = ctx.deref_mut();
-    let mut progress_store = ctx.progress_store.lock().await;
-    let progress_store = progress_store.deref_mut();
-    progress_store.syncronize(now(start_time).into());
-    ctx.course_graph.detect_recursive_fails(progress_store);
+fn syncronize(user_id: UserId) {
+    let mut user_progress = PROGRESS_STORE
+        .entry(user_id)
+        .or_insert_with(|| DEFAULT_USER_PROGRESS.clone());
+    user_progress.syncronize(now().into());
+    COURSE_GRAPH.detect_recursive_fails(&mut *user_progress);
 }
 
-async fn handle_revise(
-    id: &String,
-    bot: Bot,
-    user_id: UserId,
-    start_time: DateTime<Local>,
-    ctx: Ctx,
-) -> Option<RepetitionContext> {
+async fn handle_revise(id: &String, bot: Bot, user_id: UserId) -> Option<RepetitionContext> {
     let Task {
         question,
         options,
         answer,
         explanation,
     } = {
-        let mut ctx = ctx.lock().await;
-        let ctx = ctx.deref_mut();
-        let progress_store = ctx.progress_store.lock().await;
-        if matches!(
-            progress_store[id],
-            TaskProgress::NotStarted {
-                could_be_learned: false
-            }
-        ) {
-            send_interactions(
-                bot.clone(),
-                user_id,
-                vec!["You should learn all dependencies before starting new card.".into()],
-            )
-            .await
-            .log_err();
-            return None;
-        }
         card::random_task(
             {
-                if let Some(x) = ctx.deque.get(id) {
+                if let Some(x) = DEQUE.get(id) {
                     x
                 } else {
                     send_interactions(bot, user_id, vec!["Card with this name not found".into()])
@@ -201,7 +209,7 @@ async fn handle_revise(
                     return None;
                 }
             },
-            &mut ctx.rng,
+            rand::rng(),
         )
         .clone()
     };
@@ -240,6 +248,6 @@ async fn handle_revise(
     };
     Some(RepetitionContext {
         quality,
-        review_time: now(start_time),
+        review_time: now(),
     })
 }

@@ -21,3 +21,4 @@ chrono = "*"
 fsrs = "2.0.4"
 graphviz-rust.workspace = true
 serde.workspace = true
+dashmap = "6.1.0"

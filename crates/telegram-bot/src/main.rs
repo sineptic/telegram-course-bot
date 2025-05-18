@@ -4,7 +4,6 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use event_handler::ctx::BotCtx;
 use teloxide::{
     payloads::SendMessageSetters,
     prelude::*,
@@ -57,11 +56,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let tx = Arc::new(tx);
-    tokio::spawn(event_handler::event_handler(
-        BotCtx::load(),
-        bot.clone(),
-        rx,
-    ));
+    tokio::spawn(event_handler::event_handler(bot.clone(), rx));
 
     let handler = dptree::entry()
         .branch(

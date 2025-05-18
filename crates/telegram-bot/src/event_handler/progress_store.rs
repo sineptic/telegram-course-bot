@@ -9,7 +9,7 @@ type Level = ssr_algorithms::fsrs::level::Level;
 
 type Id = String;
 
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Task {
     progress: TaskProgress,
     level: Level,
@@ -72,7 +72,7 @@ impl Task {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UserProgress {
     weights: Weights,
     desired_retention: f32,
