@@ -1,10 +1,9 @@
-use std::{collections::BTreeMap, str::FromStr};
+use std::{collections::BTreeMap, str::FromStr, sync::Arc};
 
-use chrono::{DateTime, Local};
 use course_graph::{graph::CourseGraph, progress_store::TaskProgressStore};
 use graphviz_rust::dot_structures::Graph;
 use rand::{SeedableRng, rngs::StdRng};
-use teloxide::Bot;
+use tokio::sync::Mutex;
 
 use super::progress_store::UserProgress;
 use crate::{
@@ -14,16 +13,14 @@ use crate::{
 
 pub struct BotCtx {
     pub course_graph: Immutable<CourseGraph>,
-    pub progress_store: UserProgress,
-    pub start: DateTime<Local>,
+    pub progress_store: Arc<Mutex<UserProgress>>,
     base_graph: Graph,
     pub deque: BTreeMap<String, BTreeMap<u16, Task>>,
     pub rng: StdRng,
-    bot: Bot,
 }
 
 impl BotCtx {
-    pub fn load(bot: Bot) -> Self {
+    pub fn load() -> Self {
         let course_graph = CourseGraph::from_str(&std::fs::read_to_string("graph").unwrap())
             .unwrap_or_else(|err| {
                 println!("{err}");
@@ -35,26 +32,20 @@ impl BotCtx {
 
         let deque = deque::from_str(&std::fs::read_to_string("cards.md").unwrap(), true).unwrap();
         let rng = StdRng::from_os_rng();
-        let start = chrono::Local::now();
 
         check_cards_consistency(&progress_store, &deque);
         course_graph.detect_recursive_fails(&mut progress_store);
 
         Self {
             course_graph: course_graph.into(),
-            progress_store,
+            progress_store: Arc::new(Mutex::new(progress_store)),
             base_graph,
             deque,
             rng,
-            bot,
-            start,
         }
     }
     pub fn base_graph(&self) -> Graph {
         self.base_graph.clone()
-    }
-    pub fn bot(&self) -> Bot {
-        self.bot.clone()
     }
 }
 

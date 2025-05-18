@@ -4,7 +4,6 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use course_graph::progress_store::TaskProgress;
 use event_handler::ctx::BotCtx;
 use teloxide::{
     payloads::SendMessageSetters,
@@ -35,11 +34,6 @@ enum Event {
     ViewGraph {
         user_id: UserId,
     },
-    SetCardProgress {
-        user_id: UserId,
-        card_name: String,
-        progress: TaskProgress,
-    },
     Revise {
         user_id: UserId,
     },
@@ -63,7 +57,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     let tx = Arc::new(tx);
-    tokio::spawn(event_handler::event_handler(BotCtx::load(bot.clone()), rx));
+    tokio::spawn(event_handler::event_handler(
+        BotCtx::load(),
+        bot.clone(),
+        rx,
+    ));
 
     let handler = dptree::entry()
         .branch(

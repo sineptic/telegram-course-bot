@@ -39,15 +39,6 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
         Ok(Command::Graph) => {
             events.send(Event::ViewGraph { user_id }).await?;
         }
-        Ok(Command::Set(card_name, progress)) => {
-            events
-                .send(Event::SetCardProgress {
-                    user_id,
-                    card_name,
-                    progress,
-                })
-                .await?;
-        }
         Ok(Command::Revise) => {
             events.send(Event::Revise { user_id }).await?;
         }

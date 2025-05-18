@@ -1,4 +1,8 @@
-use std::error::Error;
+use std::{
+    error::Error,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use chrono::{DateTime, Local};
 use course_graph::progress_store::TaskProgress;
@@ -6,6 +10,7 @@ use ctx::BotCtx;
 use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide::{Bot, prelude::Requester, types::UserId};
+use tokio::sync::Mutex;
 
 use super::{Event, EventReceiver};
 use crate::{
@@ -17,11 +22,7 @@ use crate::{
 pub(crate) mod ctx;
 mod progress_store;
 
-pub(crate) async fn event_handler(mut ctx: BotCtx, mut rx: EventReceiver) {
-    while let Some(event) = rx.recv().await {
-        handle_event(&mut ctx, event).await;
-    }
-}
+type Ctx = Arc<Mutex<BotCtx>>;
 
 async fn get_user_answer(
     bot: Bot,
@@ -63,108 +64,67 @@ fn now(start: DateTime<Local>) -> DateTime<Local> {
     start + diff * 3600 * 24
 }
 
-async fn handle_event(ctx: &mut BotCtx, event: Event) {
-    let start_time = ctx.start;
+pub(crate) async fn event_handler(ctx: BotCtx, bot: Bot, mut rx: EventReceiver) {
+    let start = chrono::Local::now();
+    let ctx = Arc::new(Mutex::new(ctx));
+    while let Some(event) = rx.recv().await {
+        handle_event(start, bot.clone(), ctx.clone(), event).await;
+    }
+}
+
+async fn handle_event(start_time: DateTime<Local>, bot: Bot, ctx: Ctx, event: Event) {
     match event {
         Event::ReviseCard { user_id, card_name } => {
-            ctx.progress_store.syncronize(now(start_time).into());
-            ctx.course_graph
-                .detect_recursive_fails(&mut ctx.progress_store);
-            if let Some(rcx) = handle_revise(
-                &card_name,
-                ctx.bot(),
-                user_id,
-                start_time,
-                &ctx.deque,
-                &mut ctx.rng,
-            )
-            .await
+            syncronize(start_time, ctx.clone()).await;
+
+            if let Some(rcx) =
+                handle_revise(&card_name, bot, user_id, start_time, ctx.clone()).await
             {
-                ctx.progress_store
-                    .repetition(&card_name, async |_| rcx)
-                    .await;
+                let mut ctx = ctx.lock().await;
+                let ctx = ctx.deref_mut();
+                let mut progress_store = ctx.progress_store.lock().await;
+                let progress_store = progress_store.deref_mut();
+                progress_store.repetition(&card_name, rcx).await;
             }
         }
 
         Event::ViewGraph { user_id } => {
-            ctx.progress_store.syncronize(now(start_time).into());
-            ctx.course_graph
-                .detect_recursive_fails(&mut ctx.progress_store);
-            let graph_image =
-                course_graph::generate_graph_chart(ctx.base_graph(), &ctx.progress_store);
-            send_interactions(
-                ctx.bot(),
-                user_id,
-                vec![TelegramInteraction::PersonalImage(graph_image)],
-            )
-            .await
-            .log_err();
-        }
-
-        Event::SetCardProgress {
-            user_id,
-            card_name,
-            progress,
-        } => {
-            ctx.progress_store.syncronize(now(start_time).into());
-            ctx.course_graph
-                .detect_recursive_fails(&mut ctx.progress_store);
-            match progress {
-                TaskProgress::Good | TaskProgress::Failed => {
-                    if matches!(
-                        ctx.progress_store[&card_name],
-                        TaskProgress::NotStarted {
-                            could_be_learned: false
-                        }
-                    ) {
-                        send_interactions(
-                            ctx.bot(),
-                            user_id,
-                            vec![
-                                format!("'{card_name}' dependencies should be good to start learning new.").into(),
-                            ],
-                        )
-                        .await
-                        .log_err();
-                        return;
-                    }
-                    ctx.progress_store
-                        .repetition(&card_name, async |_| RepetitionContext {
-                            quality: match progress {
-                                TaskProgress::Good => Quality::Good,
-                                TaskProgress::Failed => Quality::Again,
-                                _ => unreachable!(),
-                            },
-                            review_time: now(start_time),
-                        })
-                        .await;
-                }
-                _ => unreachable!("should not receive set event with this task progress"),
+            syncronize(start_time, ctx.clone()).await;
+            let graph = {
+                let mut ctx = ctx.lock().await;
+                let ctx = ctx.deref_mut();
+                course_graph::generate_graph(
+                    ctx.base_graph(),
+                    ctx.progress_store.lock().await.deref(),
+                )
             };
-            ctx.progress_store.syncronize(now(start_time).into());
-            ctx.course_graph
-                .detect_recursive_fails(&mut ctx.progress_store);
 
-            Box::pin(handle_event(ctx, Event::ViewGraph { user_id })).await;
+            tokio::spawn(async move {
+                let graph_image =
+                    tokio::task::spawn_blocking(move || course_graph::print_graph(graph))
+                        .await
+                        .log_err()
+                        .unwrap();
+                send_interactions(
+                    bot,
+                    user_id,
+                    vec![TelegramInteraction::PersonalImage(graph_image)],
+                )
+                .await
+                .log_err();
+            });
         }
         Event::Revise { user_id } => {
-            ctx.progress_store.syncronize(now(start_time).into());
-            ctx.course_graph
-                .detect_recursive_fails(&mut ctx.progress_store);
-            let bot = ctx.bot();
-            let a = ctx
-                .progress_store
+            // FIXME: 2 users can't revise at the same time
+            syncronize(start_time, ctx.clone()).await;
+            let progress_store = ctx.lock().await.progress_store.clone();
+            let a = progress_store
+                .lock()
+                .await
                 .revise(async |id| {
-                    handle_revise(
-                        id,
-                        bot.clone(),
-                        user_id,
-                        start_time,
-                        &ctx.deque,
-                        &mut ctx.rng,
-                    )
-                    .await
-                    .unwrap()
+                    handle_revise(id, bot.clone(), user_id, start_time, ctx)
+                        .await
+                        .unwrap()
                 })
                 .await;
             if a.is_none() {
@@ -173,50 +133,91 @@ async fn handle_event(ctx: &mut BotCtx, event: Event) {
                     .log_err();
             }
         }
-        Event::Clear { user_id: _ } => {
-            ctx.progress_store = UserProgress::default();
-            ctx.course_graph.init_store(&mut ctx.progress_store);
+        Event::Clear { user_id } => {
+            let mut ctx = ctx.lock().await;
+            let ctx = ctx.deref_mut();
+            let mut progress_store = ctx.progress_store.lock().await;
+            let progress_store = progress_store.deref_mut();
+            *progress_store = UserProgress::default();
+            ctx.course_graph.init_store(progress_store);
+
+            tokio::spawn(async move {
+                send_interactions(bot, user_id, vec!["Progress cleared.".into()])
+                    .await
+                    .log_err();
+            });
         }
     }
 }
+
+async fn syncronize(start_time: DateTime<Local>, ctx: Arc<Mutex<BotCtx>>) {
+    let mut ctx = ctx.lock().await;
+    let ctx = ctx.deref_mut();
+    let mut progress_store = ctx.progress_store.lock().await;
+    let progress_store = progress_store.deref_mut();
+    progress_store.syncronize(now(start_time).into());
+    ctx.course_graph.detect_recursive_fails(progress_store);
+}
+
 async fn handle_revise(
     id: &String,
     bot: Bot,
     user_id: UserId,
     start_time: DateTime<Local>,
-    ctx_deque: &std::collections::BTreeMap<String, std::collections::BTreeMap<u16, Task>>,
-    ctx_rng: &mut rand::prelude::StdRng,
+    ctx: Ctx,
 ) -> Option<RepetitionContext> {
     let Task {
         question,
         options,
         answer,
         explanation,
-    } = card::random_task(
-        {
-            if let Some(x) = ctx_deque.get(id) {
-                x
-            } else {
-                send_interactions(bot, user_id, vec!["Card with this name not found".into()])
-                    .await
-                    .log_err();
-                return None;
+    } = {
+        let mut ctx = ctx.lock().await;
+        let ctx = ctx.deref_mut();
+        let progress_store = ctx.progress_store.lock().await;
+        if matches!(
+            progress_store[id],
+            TaskProgress::NotStarted {
+                could_be_learned: false
             }
-        },
-        ctx_rng,
-    );
+        ) {
+            send_interactions(
+                bot.clone(),
+                user_id,
+                vec!["You should learn all dependencies before starting new card.".into()],
+            )
+            .await
+            .log_err();
+            return None;
+        }
+        card::random_task(
+            {
+                if let Some(x) = ctx.deque.get(id) {
+                    x
+                } else {
+                    send_interactions(bot, user_id, vec!["Card with this name not found".into()])
+                        .await
+                        .log_err();
+                    return None;
+                }
+            },
+            &mut ctx.rng,
+        )
+        .clone()
+    };
+
     let mut correct = false;
     if let Some(user_answer) =
         get_card_answer(bot.clone(), user_id, question.clone(), options.clone())
             .await
             .unwrap()
-        && user_answer == options[*answer]
+        && user_answer == options[answer]
     {
         correct = true;
         bot.send_message(user_id, "Correct!").await.log_err();
     }
     if !correct {
-        bot.send_message(user_id, format!("Wrong. Answer is {}", options[*answer]))
+        bot.send_message(user_id, format!("Wrong. Answer is {}", options[answer]))
             .await
             .log_err();
         if let Some(explanation) = explanation {

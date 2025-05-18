@@ -94,15 +94,11 @@ impl UserProgress {
             t.syncronize(&fsrs, self.desired_retention, now);
         });
     }
-    pub async fn repetition(
-        &mut self,
-        id: &Id,
-        check_knowledge: impl AsyncFnOnce(&Id) -> RepetitionContext,
-    ) {
+    pub async fn repetition(&mut self, id: &Id, repetition: RepetitionContext) {
         self.tasks
             .get_mut(id)
             .unwrap()
-            .add_repetition(check_knowledge(id).await)
+            .add_repetition(repetition)
             .expect("HINT: you cant revice card that not started and have bad known(for user) dependencies")
     }
     pub async fn revise(

@@ -25,7 +25,6 @@ pub enum Command {
     Graph,
     /// Display all commands
     Help,
-    Set(String, TaskProgress),
     Revise,
     Clear,
     #[command(hide)]

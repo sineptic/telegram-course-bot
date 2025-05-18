@@ -1,6 +1,6 @@
 use std::{collections::HashMap, str::FromStr};
 
-use course_graph::{generate_graph_chart, graph::CourseGraph, progress_store::TaskProgress};
+use course_graph::{generate_graph, graph::CourseGraph, print_graph, progress_store::TaskProgress};
 
 fn main() {
     let course_graph = CourseGraph::from_str(
@@ -61,7 +61,7 @@ smth: d1, c0
         .map(|(id, progress)| (id.to_owned(), progress)),
     );
     course_graph.detect_recursive_fails(&mut progress_store);
-    let output = generate_graph_chart(graph.clone(), &progress_store);
+    let output = print_graph(generate_graph(graph.clone(), &progress_store));
 
     std::fs::write("a.png", output).expect("failed to write to 'a.png' file");
 }
