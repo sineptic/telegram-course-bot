@@ -100,7 +100,7 @@ fn now() -> DateTime<Local> {
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
-        handle_event(bot.clone(), event).await;
+        tokio::spawn(handle_event(bot.clone(), event));
     }
 }
 
@@ -143,20 +143,17 @@ async fn handle_event(bot: Bot, event: Event) {
                     .or_insert_with(|| DEFAULT_USER_PROGRESS.clone()),
             );
 
-            tokio::spawn(async move {
-                let graph_image =
-                    tokio::task::spawn_blocking(move || course_graph::print_graph(graph))
-                        .await
-                        .log_err()
-                        .unwrap();
-                send_interactions(
-                    bot,
-                    user_id,
-                    vec![TelegramInteraction::PersonalImage(graph_image)],
-                )
+            let graph_image = tokio::task::spawn_blocking(move || course_graph::print_graph(graph))
                 .await
-                .log_err();
-            });
+                .log_err()
+                .unwrap();
+            send_interactions(
+                bot,
+                user_id,
+                vec![TelegramInteraction::PersonalImage(graph_image)],
+            )
+            .await
+            .log_err();
         }
         Event::Revise { user_id } => {
             syncronize(user_id);
@@ -174,11 +171,9 @@ async fn handle_event(bot: Bot, event: Event) {
         Event::Clear { user_id } => {
             PROGRESS_STORE.insert(user_id, DEFAULT_USER_PROGRESS.clone());
 
-            tokio::spawn(async move {
-                send_interactions(bot, user_id, vec!["Progress cleared.".into()])
-                    .await
-                    .log_err();
-            });
+            send_interactions(bot, user_id, vec!["Progress cleared.".into()])
+                .await
+                .log_err();
         }
     }
 }
