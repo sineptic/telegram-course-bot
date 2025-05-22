@@ -47,8 +47,8 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
         }
 
         Err(_) => {
-            let mut state = STATE.lock().await;
-            let state = state.entry(user_id).or_insert(State::default());
+            let mut state = STATE.entry(user_id).or_default();
+            let state = state.value_mut();
             match state {
                 State::UserEvent {
                     interactions,
@@ -102,8 +102,7 @@ pub async fn set_task_for_user(
     interactions: Vec<TelegramInteraction>,
     channel: oneshot::Sender<Vec<String>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut state = STATE.lock().await;
-    let state = state.entry(user_id).or_insert(State::default());
+    let mut state = STATE.entry(user_id).or_default();
 
     *state = State::UserEvent {
         interactions,
@@ -114,7 +113,7 @@ pub async fn set_task_for_user(
         channel: Some(channel),
     };
 
-    progress_on_user_event(bot, user_id.into(), state).await?;
+    progress_on_user_event(bot, user_id.into(), state.value_mut()).await?;
     Ok(())
 }
 
@@ -130,11 +129,11 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
 
     let _ = bot.answer_callback_query(&q.id).await;
 
-    let mut state = STATE.lock().await;
-    let Some(state) = state.get_mut(&user_id) else {
+    let Some(mut state) = STATE.get_mut(&user_id) else {
         log::debug!("user {user_id} not in dialogue");
         return Ok(());
     };
+    let state = state.value_mut();
     let State::UserEvent {
         interactions: _,
         current,

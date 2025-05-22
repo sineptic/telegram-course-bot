@@ -1,16 +1,15 @@
 use std::{
-    collections::HashMap,
     error::Error,
     sync::{Arc, LazyLock},
 };
 
+use dashmap::DashMap;
 use teloxide::{
     payloads::SendMessageSetters,
     prelude::*,
     types::{InlineKeyboardButton, InlineKeyboardMarkup, Me},
     utils::command::BotCommands,
 };
-use tokio::sync::Mutex;
 
 mod commands;
 mod event_handler;
@@ -21,8 +20,7 @@ mod state;
 mod utils;
 
 use state::State;
-static STATE: LazyLock<Mutex<HashMap<UserId, State>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+static STATE: LazyLock<DashMap<UserId, State>> = LazyLock::new(DashMap::new);
 
 #[derive(Clone, Debug)]
 enum Event {
