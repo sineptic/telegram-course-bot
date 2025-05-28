@@ -14,7 +14,7 @@
     in
       pkgs.mkShell {
         buildInputs = with pkgs; [
-          gnumake
+          # gnumake
           graphviz
         ];
 
