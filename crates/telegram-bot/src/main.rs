@@ -24,20 +24,12 @@ static STATE: LazyLock<DashMap<UserId, State>> = LazyLock::new(DashMap::new);
 
 #[derive(Clone, Debug)]
 enum Event {
-    ReviseCard {
-        user_id: UserId,
-        card_name: String,
-    },
-    ViewGraph {
-        user_id: UserId,
-    },
-    Revise {
-        user_id: UserId,
-    },
-    Clear {
-        #[allow(unused)]
-        user_id: UserId,
-    },
+    ReviseCard { user_id: UserId, card_name: String },
+    ViewGraph { user_id: UserId },
+    Revise { user_id: UserId },
+    Clear { user_id: UserId },
+    ChangeCourseGraph { user_id: UserId },
+    ChangeDeque { user_id: UserId },
 }
 type EventSender = Arc<tokio::sync::mpsc::Sender<Event>>;
 type EventReceiver = tokio::sync::mpsc::Receiver<Event>;

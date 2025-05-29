@@ -1,8 +1,8 @@
-use std::{error::Error, sync::LazyLock};
+use std::{error::Error, str::FromStr, sync::LazyLock};
 
 use chrono::{DateTime, Local};
 use course::Course;
-use course_graph::progress_store::TaskProgress;
+use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
 use dashmap::DashMap;
 use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
@@ -138,6 +138,72 @@ async fn handle_event(bot: Bot, event: Event) {
             send_interactions(bot, user_id, vec!["Progress cleared.".into()])
                 .await
                 .log_err();
+        }
+        Event::ChangeCourseGraph { user_id } => {
+            let (source, printed_graph) = {
+                let course = get_course(user_id);
+                let course_graph = course.get_course_graph();
+                let source = course_graph.get_source().to_owned();
+                let generated_graph = course_graph.generate_graph();
+                drop(course);
+                let printed_graph =
+                    tokio::task::spawn_blocking(move || course_graph::print_graph(generated_graph))
+                        .await
+                        .log_err()
+                        .unwrap();
+                (source, printed_graph)
+            };
+
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            set_task_for_user(
+                bot.clone(),
+                user_id,
+                vec![
+                    "Current graph:".into(),
+                    TelegramInteraction::PersonalImage(printed_graph),
+                    "Courrent source:".into(),
+                    format!("```\n{source}\n```").into(),
+                    "Print new source:".into(),
+                    TelegramInteraction::UserInput,
+                ],
+                tx,
+            )
+            .await
+            .log_err();
+            if let Ok(answer) = rx.await {
+                assert_eq!(answer.len(), 6);
+                #[allow(clippy::needless_range_loop)]
+                for i in 0..answer.len() - 1 {
+                    assert!(answer[i].is_empty());
+                }
+                let answer = answer.last().unwrap();
+
+                match CourseGraph::from_str(answer) {
+                    Ok(new_course_graph) => {
+                        get_course(user_id).set_course_graph(new_course_graph);
+                        *get_progress(user_id) = get_course(user_id).default_user_progress();
+                        send_interactions(bot, user_id, vec!["Course graph changed".into()])
+                            .await
+                            .log_err();
+                    }
+                    Err(err) => {
+                        let err = strip_ansi_escapes::strip_str(err);
+                        send_interactions(
+                            bot,
+                            user_id,
+                            vec![
+                                "Your course graph has this errors:".into(),
+                                format!("```\n{err}\n```").into(),
+                            ],
+                        )
+                        .await
+                        .log_err();
+                    }
+                }
+            }
+        }
+        Event::ChangeDeque { user_id } => {
+            todo!()
         }
     }
 }

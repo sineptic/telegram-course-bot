@@ -22,3 +22,4 @@ fsrs = "2.0.4"
 graphviz-rust.workspace = true
 serde.workspace = true
 dashmap = "6.1.0"
+strip-ansi-escapes = "0.2.1"

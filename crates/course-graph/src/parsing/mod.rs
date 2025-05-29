@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::prelude::*;
@@ -20,25 +20,24 @@ impl FromStr for CourseGraph {
             return Err(String::from_utf8(errors).unwrap());
         }
         let mut card_prototypes = deque_prototype.unwrap().cards;
-        let mut graph = CourseGraph::default();
+        let mut graph_cards = HashMap::<String, CardNode>::new();
         while !card_prototypes.is_empty() {
             let Some((name, _)) = card_prototypes
                 .iter()
-                .find(|(_, dependencies)| dependencies.iter().all(|d| graph.cards.contains_key(d)))
+                .find(|(_, dependencies)| dependencies.iter().all(|d| graph_cards.contains_key(d)))
             else {
                 todo!("report cycle detection")
             };
             let (name, dependencies) = card_prototypes.remove_entry(&name.to_owned()).unwrap();
             for dependencie in &dependencies {
-                graph
-                    .cards
+                graph_cards
                     .get_mut(dependencie)
                     .unwrap()
                     .dependents
                     .push(name.clone());
             }
             // Safety: there is no cycles, because all dependencies already added, which don't have cycles
-            graph.cards.insert(
+            graph_cards.insert(
                 name,
                 CardNode {
                     dependencies,
@@ -46,7 +45,10 @@ impl FromStr for CourseGraph {
                 },
             );
         }
-        Ok(graph)
+        Ok(CourseGraph {
+            text: s.to_owned(),
+            cards: graph_cards,
+        })
     }
 }
 

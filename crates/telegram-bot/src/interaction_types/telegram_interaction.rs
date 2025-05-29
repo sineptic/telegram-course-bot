@@ -29,7 +29,10 @@ pub enum QuestionElement {
 impl From<QuestionElement> for TelegramInteraction {
     fn from(element: QuestionElement) -> Self {
         match element {
-            QuestionElement::Text(text) => TelegramInteraction::Text(text),
+            QuestionElement::Text(text) => {
+                let escaped = text.replace(".", "\\.");
+                TelegramInteraction::Text(escaped)
+            }
             QuestionElement::Image(image) => TelegramInteraction::Image(image),
         }
     }
