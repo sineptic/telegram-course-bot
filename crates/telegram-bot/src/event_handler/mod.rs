@@ -95,7 +95,7 @@ fn now() -> DateTime<Local> {
     static START_TIME: LazyLock<Immutable<DateTime<Local>>> = LazyLock::new(|| Local::now().into());
     let now = Local::now();
     let diff = now - **START_TIME;
-    **START_TIME + diff * 3600 * 24
+    **START_TIME + diff * 3600
 }
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
