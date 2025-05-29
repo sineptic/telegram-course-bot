@@ -1,7 +1,8 @@
-use std::{collections::BTreeMap, error::Error, str::FromStr, sync::LazyLock};
+use std::{error::Error, sync::LazyLock};
 
 use chrono::{DateTime, Local};
-use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
+use course::Course;
+use course_graph::progress_store::TaskProgress;
 use dashmap::DashMap;
 use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
@@ -16,46 +17,18 @@ use crate::{
 
 mod progress_store;
 
+mod course;
+static COURSES_STORE: LazyLock<DashMap<UserId, Course>> = LazyLock::new(DashMap::new);
+fn get_course<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, Course> {
+    COURSES_STORE.entry(user_id).or_default()
+}
+
 static PROGRESS_STORE: LazyLock<DashMap<UserId, UserProgress>> = LazyLock::new(DashMap::new);
-static COURSE_GRAPH: LazyLock<Immutable<CourseGraph>> = LazyLock::new(|| {
-    CourseGraph::from_str(&std::fs::read_to_string("graph").unwrap())
-        .unwrap_or_else(|err| {
-            println!("{err}");
-            panic!("graph parsing error");
-        })
-        .into()
-});
-static DEFAULT_USER_PROGRESS: LazyLock<Immutable<UserProgress>> = LazyLock::new(|| {
-    let mut user_progress = UserProgress::default();
-    COURSE_GRAPH.init_store(&mut user_progress);
-    user_progress.into()
-});
-static DEQUE: LazyLock<Immutable<BTreeMap<String, BTreeMap<u16, Task>>>> = LazyLock::new(|| {
-    let deque = deque::from_str(&std::fs::read_to_string("cards.md").unwrap(), true).unwrap();
-    let mut errors = Vec::new();
-    COURSE_GRAPH
-        .cards()
-        .keys()
-        .filter(|&id| !deque.contains_key(id))
-        .map(|id| format!("Graph has '{id}' card, but deque(cards.md) doesn't."))
-        .for_each(|item| {
-            errors.push(item);
-        });
-    deque
-        .keys()
-        .filter(|x| !COURSE_GRAPH.cards().contains_key(*x))
-        .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
-        .for_each(|item| {
-            errors.push(item);
-        });
-    if !errors.is_empty() {
-        panic!(
-            "Cards in deque(cards.md) and graph(graph) are different.\n{}",
-            errors.join("\n")
-        );
-    }
-    deque.into()
-});
+fn get_progress<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, UserProgress> {
+    PROGRESS_STORE
+        .entry(user_id)
+        .or_insert_with(|| get_course(user_id).default_user_progress())
+}
 
 async fn get_user_answer(
     bot: Bot,
@@ -109,9 +82,7 @@ async fn handle_event(bot: Bot, event: Event) {
         Event::ReviseCard { user_id, card_name } => {
             syncronize(user_id);
             if matches!(
-                PROGRESS_STORE
-                    .entry(user_id)
-                    .or_insert_with(|| DEFAULT_USER_PROGRESS.clone())[&card_name],
+                get_progress(user_id)[&card_name],
                 TaskProgress::NotStarted {
                     could_be_learned: false
                 }
@@ -127,20 +98,15 @@ async fn handle_event(bot: Bot, event: Event) {
             }
 
             if let Some(rcx) = handle_revise(&card_name, bot, user_id).await {
-                PROGRESS_STORE
-                    .entry(user_id)
-                    .or_insert_with(|| DEFAULT_USER_PROGRESS.clone())
-                    .repetition(&card_name, rcx);
+                get_progress(user_id).repetition(&card_name, rcx);
             }
         }
 
         Event::ViewGraph { user_id } => {
             syncronize(user_id);
             let graph = course_graph::generate_graph(
-                COURSE_GRAPH.generate_graph(),
-                &*PROGRESS_STORE
-                    .entry(user_id)
-                    .or_insert_with(|| DEFAULT_USER_PROGRESS.clone()),
+                get_course(user_id).get_course_graph().generate_graph(),
+                &*get_progress(user_id),
             );
 
             let graph_image = tokio::task::spawn_blocking(move || course_graph::print_graph(graph))
@@ -157,9 +123,7 @@ async fn handle_event(bot: Bot, event: Event) {
         }
         Event::Revise { user_id } => {
             syncronize(user_id);
-            let a = PROGRESS_STORE
-                .entry(user_id)
-                .or_insert_with(|| DEFAULT_USER_PROGRESS.clone())
+            let a = get_progress(user_id)
                 .revise(async |id| handle_revise(id, bot.clone(), user_id).await.unwrap())
                 .await;
             if a.is_none() {
@@ -169,7 +133,7 @@ async fn handle_event(bot: Bot, event: Event) {
             }
         }
         Event::Clear { user_id } => {
-            PROGRESS_STORE.insert(user_id, DEFAULT_USER_PROGRESS.clone());
+            PROGRESS_STORE.insert(user_id, get_course(user_id).default_user_progress());
 
             send_interactions(bot, user_id, vec!["Progress cleared.".into()])
                 .await
@@ -179,11 +143,11 @@ async fn handle_event(bot: Bot, event: Event) {
 }
 
 fn syncronize(user_id: UserId) {
-    let mut user_progress = PROGRESS_STORE
-        .entry(user_id)
-        .or_insert_with(|| DEFAULT_USER_PROGRESS.clone());
+    let mut user_progress = get_progress(user_id);
     user_progress.syncronize(now().into());
-    COURSE_GRAPH.detect_recursive_fails(&mut *user_progress);
+    get_course(user_id)
+        .get_course_graph()
+        .detect_recursive_fails(&mut *user_progress);
 }
 
 async fn handle_revise(id: &String, bot: Bot, user_id: UserId) -> Option<RepetitionContext> {
@@ -193,9 +157,10 @@ async fn handle_revise(id: &String, bot: Bot, user_id: UserId) -> Option<Repetit
         answer,
         explanation,
     } = {
+        let course = get_course(user_id);
         card::random_task(
             {
-                if let Some(x) = DEQUE.get(id) {
+                if let Some(x) = course.get_deque().get(id) {
                     x
                 } else {
                     send_interactions(bot, user_id, vec!["Card with this name not found".into()])
