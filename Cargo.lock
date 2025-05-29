@@ -3987,6 +3987,7 @@ dependencies = [
  "teloxide",
  "thiserror 2.0.12",
  "tokio",
+ "url",
 ]
 
 [[package]]

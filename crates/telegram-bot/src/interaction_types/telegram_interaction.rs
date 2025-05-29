@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use url::Url;
 
 use super::task::TaskParseError;
 
@@ -8,7 +8,7 @@ pub enum TelegramInteraction {
     OneOf(Vec<String>),
     Text(String),
     UserInput,
-    Image(PathBuf),
+    Image(Url),
     PersonalImage(Vec<u8>),
 }
 impl<T> From<T> for TelegramInteraction
@@ -16,23 +16,22 @@ where
     T: Into<String>,
 {
     fn from(value: T) -> Self {
-        TelegramInteraction::Text(value.into())
+        let text = value.into();
+        let escaped = text.replace(".", "\\.").replace("!", "\\!");
+        TelegramInteraction::Text(escaped)
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum QuestionElement {
     Text(String),
-    Image(PathBuf),
+    Image(Url),
 }
 
 impl From<QuestionElement> for TelegramInteraction {
     fn from(element: QuestionElement) -> Self {
         match element {
-            QuestionElement::Text(text) => {
-                let escaped = text.replace(".", "\\.");
-                TelegramInteraction::Text(escaped)
-            }
+            QuestionElement::Text(text) => text.into(),
             QuestionElement::Image(image) => TelegramInteraction::Image(image),
         }
     }
@@ -46,12 +45,12 @@ impl QuestionElement {
 
         match input.as_bytes()[0] {
             b'!' => {
-                let path = input
+                let link = input
                     .strip_prefix("![")
                     .ok_or(TaskParseError::InvalidImageSyntax)?
                     .strip_suffix("]")
                     .ok_or(TaskParseError::InvalidImageSyntax)?;
-                Ok(QuestionElement::Image(PathBuf::from(path)))
+                Ok(QuestionElement::Image(link.parse()?))
             }
             _ => Ok(QuestionElement::Text(input.to_string())),
         }

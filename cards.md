@@ -2,7 +2,7 @@
 capitals
 
 # Task 1
-![assets/france-paris.jpg]
+![https://images.freeimages.com/images/premium/previews/1043/10437687-3d-map-of-france-with-capital-city-marked.jpg]
 What is the capital of France?
 
 * Paris

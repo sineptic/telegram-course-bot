@@ -29,7 +29,7 @@ pub(crate) const ERROR_MSG: &str = "Task should follow this syntax:
 ...
 'question':
 text
-![image]
+![link_to_image]
 ...
             <- empty line
 * correct 'option'
@@ -58,8 +58,10 @@ pub enum TaskParseError {
     InvalidOptionPrefix,
     #[error("{ERROR_MSG}. Each option should contain non empty text")]
     EmptyOptionText,
-    #[error("Image should have this syntax: ![path_to_image]")]
+    #[error("Image should have this syntax: ![link_to_image]")]
     InvalidImageSyntax,
+    #[error("Image should be valid link. Error: {0}")]
+    ImageShouldBeLink(#[from] url::ParseError),
     #[error("{ERROR_MSG}. Task should not have anything after explanation")]
     ContentAfterExplanation,
 }

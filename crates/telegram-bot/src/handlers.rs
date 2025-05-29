@@ -235,8 +235,9 @@ pub async fn progress_on_user_event(
                 *current_id = rand::random();
                 break;
             }
-            TelegramInteraction::Image(path) => {
-                bot.send_photo(chat_id, InputFile::file(path)).await?;
+            TelegramInteraction::Image(link) => {
+                bot.send_photo(chat_id, InputFile::url(link.clone()))
+                    .await?;
                 *current += 1;
                 answers.push(String::new());
             }
