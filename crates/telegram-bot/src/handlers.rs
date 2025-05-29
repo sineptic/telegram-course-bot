@@ -51,6 +51,9 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
         Ok(Command::ChangeCourseGraph) => {
             events.send(Event::ChangeCourseGraph { user_id }).await?;
         }
+        Ok(Command::ChangeDeque) => {
+            events.send(Event::ChangeDeque { user_id }).await?;
+        }
 
         Err(_) => {
             let mut state = STATE.entry(user_id).or_default();

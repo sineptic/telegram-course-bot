@@ -23,12 +23,13 @@ static DEFAULT_DEQUE: LazyLock<Immutable<Deque>> = LazyLock::new(|| {
     DEFAULT_COURSE_GRAPH
         .cards()
         .keys()
-        .filter(|&id| !deque.contains_key(id))
+        .filter(|&id| !deque.tasks.contains_key(id))
         .map(|id| format!("Graph has '{id}' card, but deque(cards.md) doesn't."))
         .for_each(|item| {
             errors.push(item);
         });
     deque
+        .tasks
         .keys()
         .filter(|x| !DEFAULT_COURSE_GRAPH.cards().contains_key(*x))
         .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
@@ -44,7 +45,7 @@ static DEFAULT_DEQUE: LazyLock<Immutable<Deque>> = LazyLock::new(|| {
     deque.into()
 });
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Course {
     course_graph: Option<Immutable<CourseGraph>>,
     deque: Option<Immutable<Deque>>,
@@ -77,10 +78,11 @@ impl Course {
         course_graph
             .cards()
             .keys()
-            .filter(|&id| !deque.contains_key(id))
+            .filter(|&id| !deque.tasks.contains_key(id))
             .map(|id| format!("Graph has '{id}' card, but deque(cards.md) doesn't."))
             .for_each(|item| errors.push(item));
         deque
+            .tasks
             .keys()
             .filter(|x| !DEFAULT_COURSE_GRAPH.cards().contains_key(*x))
             .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))

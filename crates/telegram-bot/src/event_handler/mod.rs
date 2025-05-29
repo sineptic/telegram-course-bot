@@ -203,7 +203,53 @@ async fn handle_event(bot: Bot, event: Event) {
             }
         }
         Event::ChangeDeque { user_id } => {
-            todo!()
+            let source = get_course(user_id).get_deque().source.clone();
+
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            set_task_for_user(
+                bot.clone(),
+                user_id,
+                vec![
+                    "Courrent source:".into(),
+                    format!("```\n{source}\n```").into(),
+                    "Print new source:".into(),
+                    TelegramInteraction::UserInput,
+                ],
+                tx,
+            )
+            .await
+            .log_err();
+            if let Ok(answer) = rx.await {
+                assert_eq!(answer.len(), 4);
+                #[allow(clippy::needless_range_loop)]
+                for i in 0..answer.len() - 1 {
+                    assert!(answer[i].is_empty());
+                }
+                let answer = answer.last().unwrap();
+
+                match deque::from_str(answer, true) {
+                    Ok(new_deque) => {
+                        get_course(user_id).set_deque(new_deque);
+                        let default_user_progress = get_course(user_id).default_user_progress();
+                        *get_progress(user_id) = default_user_progress;
+                        send_interactions(bot, user_id, vec!["Deque changed".into()])
+                            .await
+                            .log_err();
+                    }
+                    Err(err) => {
+                        send_interactions(
+                            bot,
+                            user_id,
+                            vec![
+                                "Your deque has this errors:".into(),
+                                format!("```\n{err}\n```").into(),
+                            ],
+                        )
+                        .await
+                        .log_err();
+                    }
+                }
+            }
         }
     }
 }
@@ -226,7 +272,7 @@ async fn handle_revise(id: &String, bot: Bot, user_id: UserId) -> Option<Repetit
         let course = get_course(user_id);
         card::random_task(
             {
-                if let Some(x) = course.get_deque().get(id) {
+                if let Some(x) = course.get_deque().tasks.get(id) {
                     x
                 } else {
                     send_interactions(bot, user_id, vec!["Card with this name not found".into()])

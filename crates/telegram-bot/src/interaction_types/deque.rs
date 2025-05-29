@@ -3,7 +3,11 @@ use std::collections::BTreeMap;
 use super::{Card, Task};
 use crate::check;
 
-pub type Deque = BTreeMap<String, BTreeMap<u16, Task>>;
+#[derive(Debug)]
+pub struct Deque {
+    pub source: String,
+    pub tasks: BTreeMap<String, BTreeMap<u16, Task>>,
+}
 
 const USAGE: &str = "Deque should follow this syntax:
 card syntax
@@ -28,12 +32,15 @@ pub fn from_str(input: &str, multiline_messages: bool) -> Result<Deque, DequePar
         .split(|line| line.starts_with("-----"))
         .map(|input| input.join("\n"));
     let cards = cards_input.map(|x| Card::from_str(x, multiline_messages));
-    let mut deque = Deque::new();
+    let mut deque = Deque {
+        source: input.to_owned(),
+        tasks: BTreeMap::new(),
+    };
     for card in cards {
         let Card { name, tasks } = card?;
-        let prev = deque.insert(name.to_lowercase(), tasks);
+        let prev = deque.tasks.insert(name.to_lowercase(), tasks);
         check!(prev.is_none(), DequeParseError::CardNameRepeated);
     }
-    check!(!deque.is_empty(), DequeParseError::NoCards);
+    check!(!deque.tasks.is_empty(), DequeParseError::NoCards);
     Ok(deque)
 }

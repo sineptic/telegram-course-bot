@@ -28,8 +28,9 @@ pub enum Command {
     Revise,
     Clear,
 
-    // ChangeDeque,
     ChangeCourseGraph,
+    ChangeDeque,
+
     #[command(hide)]
     Start,
 }
