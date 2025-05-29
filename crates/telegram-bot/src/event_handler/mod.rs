@@ -133,7 +133,10 @@ async fn handle_event(bot: Bot, event: Event) {
             }
         }
         Event::Clear { user_id } => {
-            PROGRESS_STORE.insert(user_id, get_course(user_id).default_user_progress());
+            let new_course = Course::default();
+            let new_progress = new_course.default_user_progress();
+            *get_course(user_id) = new_course;
+            *get_progress(user_id) = new_progress;
 
             send_interactions(bot, user_id, vec!["Progress cleared.".into()])
                 .await
@@ -249,6 +252,46 @@ async fn handle_event(bot: Bot, event: Event) {
                         .log_err();
                     }
                 }
+            }
+        }
+        Event::ViewCourseGraphSource { user_id } => {
+            let source = get_course(user_id)
+                .get_course_graph()
+                .get_source()
+                .to_owned();
+            send_interactions(
+                bot,
+                user_id,
+                vec![
+                    "Course graph source:".into(),
+                    format!("```\n{source}\n```").into(),
+                ],
+            )
+            .await
+            .log_err();
+        }
+        Event::ViewDequeSource { user_id } => {
+            let source = get_course(user_id).get_deque().source.to_owned();
+            send_interactions(
+                bot,
+                user_id,
+                vec!["Deque source:".into(), format!("```\n{source}\n```").into()],
+            )
+            .await
+            .log_err();
+        }
+        Event::ViewCourseErrors { user_id } => {
+            if let Some(errors) = get_course(user_id).get_errors() {
+                let mut msgs = Vec::new();
+                msgs.push("Errors:".into());
+                for error in errors {
+                    msgs.push(error.into());
+                }
+                send_interactions(bot, user_id, msgs).await.log_err();
+            } else {
+                send_interactions(bot, user_id, vec!["No errors!".into()])
+                    .await
+                    .log_err();
             }
         }
     }

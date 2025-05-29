@@ -30,6 +30,9 @@ enum Event {
     Clear { user_id: UserId },
     ChangeCourseGraph { user_id: UserId },
     ChangeDeque { user_id: UserId },
+    ViewCourseGraphSource { user_id: UserId },
+    ViewDequeSource { user_id: UserId },
+    ViewCourseErrors { user_id: UserId },
 }
 type EventSender = Arc<tokio::sync::mpsc::Sender<Event>>;
 type EventReceiver = tokio::sync::mpsc::Receiver<Event>;

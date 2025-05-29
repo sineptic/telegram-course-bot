@@ -31,6 +31,10 @@ pub enum Command {
     ChangeCourseGraph,
     ChangeDeque,
 
+    ViewCourseGraphSource,
+    ViewDequeSource,
+    ViewCourseErrors,
+
     #[command(hide)]
     Start,
 }
