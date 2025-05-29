@@ -27,6 +27,14 @@ pub enum Command {
     Help,
     Revise,
     Clear,
+
+    ChangeCourseGraph,
+    ChangeDeque,
+
+    ViewCourseGraphSource,
+    ViewDequeSource,
+    ViewCourseErrors,
+
     #[command(hide)]
     Start,
 }

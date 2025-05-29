@@ -1,6 +1,7 @@
-use std::{collections::BTreeMap, error::Error, str::FromStr, sync::LazyLock};
+use std::{error::Error, str::FromStr, sync::LazyLock};
 
 use chrono::{DateTime, Local};
+use course::Course;
 use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
 use dashmap::DashMap;
 use progress_store::UserProgress;
@@ -16,46 +17,18 @@ use crate::{
 
 mod progress_store;
 
+mod course;
+static COURSES_STORE: LazyLock<DashMap<UserId, Course>> = LazyLock::new(DashMap::new);
+fn get_course<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, Course> {
+    COURSES_STORE.entry(user_id).or_default()
+}
+
 static PROGRESS_STORE: LazyLock<DashMap<UserId, UserProgress>> = LazyLock::new(DashMap::new);
-static COURSE_GRAPH: LazyLock<Immutable<CourseGraph>> = LazyLock::new(|| {
-    CourseGraph::from_str(&std::fs::read_to_string("graph").unwrap())
-        .unwrap_or_else(|err| {
-            println!("{err}");
-            panic!("graph parsing error");
-        })
-        .into()
-});
-static DEFAULT_USER_PROGRESS: LazyLock<Immutable<UserProgress>> = LazyLock::new(|| {
-    let mut user_progress = UserProgress::default();
-    COURSE_GRAPH.init_store(&mut user_progress);
-    user_progress.into()
-});
-static DEQUE: LazyLock<Immutable<BTreeMap<String, BTreeMap<u16, Task>>>> = LazyLock::new(|| {
-    let deque = deque::from_str(&std::fs::read_to_string("cards.md").unwrap(), true).unwrap();
-    let mut errors = Vec::new();
-    COURSE_GRAPH
-        .cards()
-        .keys()
-        .filter(|&id| !deque.contains_key(id))
-        .map(|id| format!("Graph has '{id}' card, but deque(cards.md) doesn't."))
-        .for_each(|item| {
-            errors.push(item);
-        });
-    deque
-        .keys()
-        .filter(|x| !COURSE_GRAPH.cards().contains_key(*x))
-        .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
-        .for_each(|item| {
-            errors.push(item);
-        });
-    if !errors.is_empty() {
-        panic!(
-            "Cards in deque(cards.md) and graph(graph) are different.\n{}",
-            errors.join("\n")
-        );
-    }
-    deque.into()
-});
+fn get_progress<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, UserProgress> {
+    PROGRESS_STORE
+        .entry(user_id)
+        .or_insert_with(|| get_course(user_id).default_user_progress())
+}
 
 async fn get_user_answer(
     bot: Bot,
@@ -109,9 +82,7 @@ async fn handle_event(bot: Bot, event: Event) {
         Event::ReviseCard { user_id, card_name } => {
             syncronize(user_id);
             if matches!(
-                PROGRESS_STORE
-                    .entry(user_id)
-                    .or_insert_with(|| DEFAULT_USER_PROGRESS.clone())[&card_name],
+                get_progress(user_id)[&card_name],
                 TaskProgress::NotStarted {
                     could_be_learned: false
                 }
@@ -127,20 +98,15 @@ async fn handle_event(bot: Bot, event: Event) {
             }
 
             if let Some(rcx) = handle_revise(&card_name, bot, user_id).await {
-                PROGRESS_STORE
-                    .entry(user_id)
-                    .or_insert_with(|| DEFAULT_USER_PROGRESS.clone())
-                    .repetition(&card_name, rcx);
+                get_progress(user_id).repetition(&card_name, rcx);
             }
         }
 
         Event::ViewGraph { user_id } => {
             syncronize(user_id);
             let graph = course_graph::generate_graph(
-                COURSE_GRAPH.generate_graph(),
-                &*PROGRESS_STORE
-                    .entry(user_id)
-                    .or_insert_with(|| DEFAULT_USER_PROGRESS.clone()),
+                get_course(user_id).get_course_graph().generate_graph(),
+                &*get_progress(user_id),
             );
 
             let graph_image = tokio::task::spawn_blocking(move || course_graph::print_graph(graph))
@@ -157,9 +123,7 @@ async fn handle_event(bot: Bot, event: Event) {
         }
         Event::Revise { user_id } => {
             syncronize(user_id);
-            let a = PROGRESS_STORE
-                .entry(user_id)
-                .or_insert_with(|| DEFAULT_USER_PROGRESS.clone())
+            let a = get_progress(user_id)
                 .revise(async |id| handle_revise(id, bot.clone(), user_id).await.unwrap())
                 .await;
             if a.is_none() {
@@ -169,21 +133,176 @@ async fn handle_event(bot: Bot, event: Event) {
             }
         }
         Event::Clear { user_id } => {
-            PROGRESS_STORE.insert(user_id, DEFAULT_USER_PROGRESS.clone());
+            let new_course = Course::default();
+            let new_progress = new_course.default_user_progress();
+            *get_course(user_id) = new_course;
+            *get_progress(user_id) = new_progress;
 
             send_interactions(bot, user_id, vec!["Progress cleared.".into()])
                 .await
                 .log_err();
         }
+        Event::ChangeCourseGraph { user_id } => {
+            let (source, printed_graph) = {
+                let course = get_course(user_id);
+                let course_graph = course.get_course_graph();
+                let source = course_graph.get_source().to_owned();
+                let generated_graph = course_graph.generate_graph();
+                drop(course);
+                let printed_graph =
+                    tokio::task::spawn_blocking(move || course_graph::print_graph(generated_graph))
+                        .await
+                        .log_err()
+                        .unwrap();
+                (source, printed_graph)
+            };
+
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            set_task_for_user(
+                bot.clone(),
+                user_id,
+                vec![
+                    "Current graph:".into(),
+                    TelegramInteraction::PersonalImage(printed_graph),
+                    "Courrent source:".into(),
+                    format!("```\n{source}\n```").into(),
+                    "Print new source:".into(),
+                    TelegramInteraction::UserInput,
+                ],
+                tx,
+            )
+            .await
+            .log_err();
+            if let Ok(answer) = rx.await {
+                assert_eq!(answer.len(), 6);
+                #[allow(clippy::needless_range_loop)]
+                for i in 0..answer.len() - 1 {
+                    assert!(answer[i].is_empty());
+                }
+                let answer = answer.last().unwrap();
+
+                match CourseGraph::from_str(answer) {
+                    Ok(new_course_graph) => {
+                        get_course(user_id).set_course_graph(new_course_graph);
+                        *get_progress(user_id) = get_course(user_id).default_user_progress();
+                        send_interactions(bot, user_id, vec!["Course graph changed".into()])
+                            .await
+                            .log_err();
+                    }
+                    Err(err) => {
+                        let err = strip_ansi_escapes::strip_str(err);
+                        send_interactions(
+                            bot,
+                            user_id,
+                            vec![
+                                "Your course graph has this errors:".into(),
+                                format!("```\n{err}\n```").into(),
+                            ],
+                        )
+                        .await
+                        .log_err();
+                    }
+                }
+            }
+        }
+        Event::ChangeDeque { user_id } => {
+            let source = get_course(user_id).get_deque().source.clone();
+
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            set_task_for_user(
+                bot.clone(),
+                user_id,
+                vec![
+                    "Courrent source:".into(),
+                    format!("```\n{source}\n```").into(),
+                    "Print new source:".into(),
+                    TelegramInteraction::UserInput,
+                ],
+                tx,
+            )
+            .await
+            .log_err();
+            if let Ok(answer) = rx.await {
+                assert_eq!(answer.len(), 4);
+                #[allow(clippy::needless_range_loop)]
+                for i in 0..answer.len() - 1 {
+                    assert!(answer[i].is_empty());
+                }
+                let answer = answer.last().unwrap();
+
+                match deque::from_str(answer, true) {
+                    Ok(new_deque) => {
+                        get_course(user_id).set_deque(new_deque);
+                        let default_user_progress = get_course(user_id).default_user_progress();
+                        *get_progress(user_id) = default_user_progress;
+                        send_interactions(bot, user_id, vec!["Deque changed".into()])
+                            .await
+                            .log_err();
+                    }
+                    Err(err) => {
+                        send_interactions(
+                            bot,
+                            user_id,
+                            vec![
+                                "Your deque has this errors:".into(),
+                                format!("```\n{err}\n```").into(),
+                            ],
+                        )
+                        .await
+                        .log_err();
+                    }
+                }
+            }
+        }
+        Event::ViewCourseGraphSource { user_id } => {
+            let source = get_course(user_id)
+                .get_course_graph()
+                .get_source()
+                .to_owned();
+            send_interactions(
+                bot,
+                user_id,
+                vec![
+                    "Course graph source:".into(),
+                    format!("```\n{source}\n```").into(),
+                ],
+            )
+            .await
+            .log_err();
+        }
+        Event::ViewDequeSource { user_id } => {
+            let source = get_course(user_id).get_deque().source.to_owned();
+            send_interactions(
+                bot,
+                user_id,
+                vec!["Deque source:".into(), format!("```\n{source}\n```").into()],
+            )
+            .await
+            .log_err();
+        }
+        Event::ViewCourseErrors { user_id } => {
+            if let Some(errors) = get_course(user_id).get_errors() {
+                let mut msgs = Vec::new();
+                msgs.push("Errors:".into());
+                for error in errors {
+                    msgs.push(error.into());
+                }
+                send_interactions(bot, user_id, msgs).await.log_err();
+            } else {
+                send_interactions(bot, user_id, vec!["No errors!".into()])
+                    .await
+                    .log_err();
+            }
+        }
     }
 }
 
 fn syncronize(user_id: UserId) {
-    let mut user_progress = PROGRESS_STORE
-        .entry(user_id)
-        .or_insert_with(|| DEFAULT_USER_PROGRESS.clone());
+    let mut user_progress = get_progress(user_id);
     user_progress.syncronize(now().into());
-    COURSE_GRAPH.detect_recursive_fails(&mut *user_progress);
+    get_course(user_id)
+        .get_course_graph()
+        .detect_recursive_fails(&mut *user_progress);
 }
 
 async fn handle_revise(id: &String, bot: Bot, user_id: UserId) -> Option<RepetitionContext> {
@@ -193,9 +312,10 @@ async fn handle_revise(id: &String, bot: Bot, user_id: UserId) -> Option<Repetit
         answer,
         explanation,
     } = {
+        let course = get_course(user_id);
         card::random_task(
             {
-                if let Some(x) = DEQUE.get(id) {
+                if let Some(x) = course.get_deque().tasks.get(id) {
                     x
                 } else {
                     send_interactions(bot, user_id, vec!["Card with this name not found".into()])

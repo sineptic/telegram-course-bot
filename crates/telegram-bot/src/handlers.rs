@@ -1,4 +1,7 @@
-use teloxide::{dispatching::dialogue::GetChatId, types::InputFile};
+use teloxide::{
+    dispatching::dialogue::GetChatId,
+    types::{InputFile, ParseMode},
+};
 use tokio::sync::oneshot;
 
 use super::{commands::Command, inline_keyboard::make_keyboard, state::State, *};
@@ -44,6 +47,23 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
         }
         Ok(Command::Clear) => {
             events.send(Event::Clear { user_id }).await?;
+        }
+        Ok(Command::ChangeCourseGraph) => {
+            events.send(Event::ChangeCourseGraph { user_id }).await?;
+        }
+        Ok(Command::ChangeDeque) => {
+            events.send(Event::ChangeDeque { user_id }).await?;
+        }
+        Ok(Command::ViewCourseGraphSource) => {
+            events
+                .send(Event::ViewCourseGraphSource { user_id })
+                .await?;
+        }
+        Ok(Command::ViewDequeSource) => {
+            events.send(Event::ViewDequeSource { user_id }).await?;
+        }
+        Ok(Command::ViewCourseErrors) => {
+            events.send(Event::ViewCourseErrors { user_id }).await?;
         }
 
         Err(_) => {
@@ -216,7 +236,9 @@ pub async fn progress_on_user_event(
                 break;
             }
             TelegramInteraction::Text(text) => {
-                bot.send_message(chat_id, text).await?;
+                bot.send_message(chat_id, text)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .await?;
                 *current += 1;
                 answers.push(String::new());
             }
@@ -227,8 +249,9 @@ pub async fn progress_on_user_event(
                 *current_id = rand::random();
                 break;
             }
-            TelegramInteraction::Image(path) => {
-                bot.send_photo(chat_id, InputFile::file(path)).await?;
+            TelegramInteraction::Image(link) => {
+                bot.send_photo(chat_id, InputFile::url(link.clone()))
+                    .await?;
                 *current += 1;
                 answers.push(String::new());
             }

@@ -112,6 +112,7 @@ where
 
 /// Struct for value, that should be immutable from this point.
 /// Use From to create.
+#[derive(Debug)]
 pub struct Immutable<T>(T);
 impl<T> From<T> for Immutable<T> {
     fn from(value: T) -> Self {
