@@ -80,6 +80,7 @@ pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
 async fn handle_event(bot: Bot, event: Event) {
     match event {
         Event::ReviseCard { user_id, card_name } => {
+            log::info!("user {user_id} trigger ReviseCard event");
             syncronize(user_id);
             if matches!(
                 get_progress(user_id)[&card_name],
@@ -102,10 +103,12 @@ async fn handle_event(bot: Bot, event: Event) {
             }
         }
         Event::PreviewCard { user_id, card_name } => {
+            log::info!("user {user_id} trigger PreviewCard event");
             handle_revise(&card_name, bot, user_id).await;
         }
 
         Event::ViewGraph { user_id } => {
+            log::info!("user {user_id} trigger ViewGraph event");
             syncronize(user_id);
             let graph = course_graph::generate_graph(
                 get_course(user_id).get_course_graph().generate_graph(),
@@ -125,6 +128,7 @@ async fn handle_event(bot: Bot, event: Event) {
             .log_err();
         }
         Event::Revise { user_id } => {
+            log::info!("user {user_id} trigger Revise event");
             syncronize(user_id);
             let a = get_progress(user_id)
                 .revise(async |id| handle_revise(id, bot.clone(), user_id).await.unwrap())
@@ -136,6 +140,7 @@ async fn handle_event(bot: Bot, event: Event) {
             }
         }
         Event::Clear { user_id } => {
+            log::info!("user {user_id} trigger Clear event");
             let new_course = Course::default();
             let new_progress = new_course.default_user_progress();
             *get_course(user_id) = new_course;
@@ -146,6 +151,7 @@ async fn handle_event(bot: Bot, event: Event) {
                 .log_err();
         }
         Event::ChangeCourseGraph { user_id } => {
+            log::info!("user {user_id} trigger ChangeCourseGraph event");
             let (source, printed_graph) = {
                 let course = get_course(user_id);
                 let course_graph = course.get_course_graph();
@@ -209,6 +215,7 @@ async fn handle_event(bot: Bot, event: Event) {
             }
         }
         Event::ChangeDeque { user_id } => {
+            log::info!("user {user_id} trigger ChangeDeque event");
             let source = get_course(user_id).get_deque().source.clone();
 
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -258,6 +265,7 @@ async fn handle_event(bot: Bot, event: Event) {
             }
         }
         Event::ViewCourseGraphSource { user_id } => {
+            log::info!("user {user_id} trigger ViewCourseGraphSource event");
             let source = get_course(user_id)
                 .get_course_graph()
                 .get_source()
@@ -274,6 +282,7 @@ async fn handle_event(bot: Bot, event: Event) {
             .log_err();
         }
         Event::ViewDequeSource { user_id } => {
+            log::info!("user {user_id} trigger ViewDequeSource event");
             let source = get_course(user_id).get_deque().source.to_owned();
             send_interactions(
                 bot,
@@ -284,6 +293,7 @@ async fn handle_event(bot: Bot, event: Event) {
             .log_err();
         }
         Event::ViewCourseErrors { user_id } => {
+            log::info!("user {user_id} trigger ViewCourseErrors event");
             if let Some(errors) = get_course(user_id).get_errors() {
                 let mut msgs = Vec::new();
                 msgs.push("Errors:".into());
