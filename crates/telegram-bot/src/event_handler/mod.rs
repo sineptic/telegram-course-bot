@@ -346,36 +346,49 @@ async fn handle_revise(id: &String, bot: Bot, user_id: UserId) -> Option<Repetit
     if let Some(user_answer) =
         get_card_answer(bot.clone(), user_id, question.clone(), options.clone())
             .await
+            .log_err()
             .unwrap()
-        && user_answer == options[answer]
     {
-        correct = true;
-        bot.send_message(user_id, "Correct!").await.log_err();
-    }
-    if !correct {
-        bot.send_message(user_id, format!("Wrong. Answer is {}", options[answer]))
-            .await
-            .log_err();
-        if let Some(explanation) = explanation {
+        if user_answer == options[answer] {
+            correct = true;
+            send_interactions(bot.clone(), user_id, vec!["Correct!".into()])
+                .await
+                .log_err();
+        } else {
             send_interactions(
                 bot.clone(),
                 user_id,
-                explanation
-                    .iter()
-                    .map(|x| x.clone().into())
-                    .collect::<Vec<TelegramInteraction>>(),
+                vec![format!("Wrong. Answer is {}", options[answer]).into()],
             )
             .await
             .log_err();
+            if let Some(explanation) = explanation {
+                send_interactions(
+                    bot.clone(),
+                    user_id,
+                    explanation
+                        .iter()
+                        .map(|x| x.clone().into())
+                        .collect::<Vec<TelegramInteraction>>(),
+                )
+                .await
+                .log_err();
+            }
         }
-    }
-    let quality = if correct {
-        Quality::Good
+
+        let quality = if correct {
+            Quality::Good
+        } else {
+            Quality::Again
+        };
+        Some(RepetitionContext {
+            quality,
+            review_time: now(),
+        })
     } else {
-        Quality::Again
-    };
-    Some(RepetitionContext {
-        quality,
-        review_time: now(),
-    })
+        Some(RepetitionContext {
+            quality: Quality::Again,
+            review_time: now(),
+        })
+    }
 }
