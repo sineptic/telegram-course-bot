@@ -23,7 +23,9 @@ use state::State;
 static STATE: LazyLock<DashMap<UserId, State>> = LazyLock::new(DashMap::new);
 
 #[derive(Clone, Debug)]
+#[allow(unused)]
 enum Event {
+    PreviewCard { user_id: UserId, card_name: String },
     ReviseCard { user_id: UserId, card_name: String },
     ViewGraph { user_id: UserId },
     Revise { user_id: UserId },

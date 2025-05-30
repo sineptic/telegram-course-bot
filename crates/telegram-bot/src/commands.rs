@@ -16,16 +16,17 @@ fn non_empty(input: String) -> Result<(String,), ParseError> {
 }
 
 #[derive(BotCommands)]
-#[command(rename_rule = "lowercase", parse_with = "split")]
+#[command(rename_rule = "snake_case", parse_with = "split")]
 pub enum Command {
-    /// Revise
+    /// Try to complete card
     #[command(parse_with = non_empty)]
     Card(String),
     /// View course structure
     Graph,
     /// Display all commands
     Help,
-    Revise,
+    // Revise,
+    /// Reset your state to default(clear all progress)
     Clear,
 
     ChangeCourseGraph,

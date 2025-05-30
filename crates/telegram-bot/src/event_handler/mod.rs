@@ -101,6 +101,9 @@ async fn handle_event(bot: Bot, event: Event) {
                 get_progress(user_id).repetition(&card_name, rcx);
             }
         }
+        Event::PreviewCard { user_id, card_name } => {
+            handle_revise(&card_name, bot, user_id).await;
+        }
 
         Event::ViewGraph { user_id } => {
             syncronize(user_id);

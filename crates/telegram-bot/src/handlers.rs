@@ -31,20 +31,23 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
                 .await?;
         }
         Ok(Command::Start) => {
-            // TODO
-            bot.send_message(chat_id, "TODO").await?;
+            // TODO: onboarding
+            bot.send_message(chat_id, "TODO: onboarding").await?;
+
+            bot.send_message(msg.chat.id, Command::descriptions().to_string())
+                .await?;
         }
         Ok(Command::Card(card_name)) => {
             events
-                .send(Event::ReviseCard { user_id, card_name })
+                .send(Event::PreviewCard { user_id, card_name })
                 .await?;
         }
         Ok(Command::Graph) => {
             events.send(Event::ViewGraph { user_id }).await?;
         }
-        Ok(Command::Revise) => {
-            events.send(Event::Revise { user_id }).await?;
-        }
+        // Ok(Command::Revise) => {
+        //     events.send(Event::Revise { user_id }).await?;
+        // }
         Ok(Command::Clear) => {
             events.send(Event::Clear { user_id }).await?;
         }
