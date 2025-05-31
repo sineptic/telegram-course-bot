@@ -223,7 +223,7 @@ async fn handle_event(bot: Bot, event: Event) {
                 bot.clone(),
                 user_id,
                 vec![
-                    "Courrent source:".into(),
+                    "Current source:".into(),
                     format!("```\n{source}\n```").into(),
                     "Print new source:".into(),
                     TelegramInteraction::UserInput,
