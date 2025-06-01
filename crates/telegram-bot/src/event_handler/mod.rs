@@ -36,19 +36,26 @@ async fn get_user_answer(
     interactions: impl IntoIterator<Item = QuestionElement>,
     answers: Vec<String>,
 ) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    set_task_for_user(
+    let answer = get_user_answer_raw(
         bot,
         user_id,
         interactions
             .into_iter()
             .map(|x| x.into())
-            .chain([TelegramInteraction::OneOf(answers)])
-            .collect(),
-        tx,
+            .chain([TelegramInteraction::OneOf(answers)]),
     )
     .await?;
-    let Some(answer) = rx.await.map(|mut x| x.pop().unwrap()).ok() else {
+    Ok(answer.map(|mut x| x.pop().unwrap()))
+}
+async fn get_user_answer_raw(
+    bot: Bot,
+    user_id: UserId,
+    interactions: impl IntoIterator<Item = TelegramInteraction>,
+) -> Result<Option<Vec<String>>, Box<dyn Error + Send + Sync>> {
+    let interactions = interactions.into_iter().collect();
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    set_task_for_user(bot, user_id, interactions, tx).await?;
+    let Ok(answer) = rx.await else {
         return Ok(None);
     };
     Ok(Some(answer))
@@ -166,8 +173,7 @@ async fn handle_event(bot: Bot, event: Event) {
                 (source, printed_graph)
             };
 
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            set_task_for_user(
+            if let Some(answer) = get_user_answer_raw(
                 bot.clone(),
                 user_id,
                 vec![
@@ -178,11 +184,11 @@ async fn handle_event(bot: Bot, event: Event) {
                     "Print new source:".into(),
                     TelegramInteraction::UserInput,
                 ],
-                tx,
             )
             .await
-            .log_err();
-            if let Ok(answer) = rx.await {
+            .log_err()
+            .unwrap()
+            {
                 assert_eq!(answer.len(), 6);
                 #[allow(clippy::needless_range_loop)]
                 for i in 0..answer.len() - 1 {
@@ -218,8 +224,7 @@ async fn handle_event(bot: Bot, event: Event) {
             log::info!("user {user_id} trigger ChangeDeque event");
             let source = get_course(user_id).get_deque().source.clone();
 
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            set_task_for_user(
+            if let Some(answer) = get_user_answer_raw(
                 bot.clone(),
                 user_id,
                 vec![
@@ -228,11 +233,11 @@ async fn handle_event(bot: Bot, event: Event) {
                     "Print new source:".into(),
                     TelegramInteraction::UserInput,
                 ],
-                tx,
             )
             .await
-            .log_err();
-            if let Ok(answer) = rx.await {
+            .log_err()
+            .unwrap()
+            {
                 assert_eq!(answer.len(), 4);
                 #[allow(clippy::needless_range_loop)]
                 for i in 0..answer.len() - 1 {
