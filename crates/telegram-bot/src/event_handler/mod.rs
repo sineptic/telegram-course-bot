@@ -80,11 +80,15 @@ fn now() -> DateTime<Local> {
 
 pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
     while let Some(event) = rx.recv().await {
-        tokio::spawn(handle_event(bot.clone(), event));
+        let bot = bot.clone();
+        tokio::spawn(async move {
+            let result = handle_event(bot, event).await;
+            result.log_err();
+        });
     }
 }
 
-async fn handle_event(bot: Bot, event: Event) {
+async fn handle_event(bot: Bot, event: Event) -> Result<(), Box<dyn Error + Send + Sync>> {
     match event {
         Event::ReviseCard { user_id, card_name } => {
             log::info!("user {user_id} trigger ReviseCard event");
@@ -100,9 +104,8 @@ async fn handle_event(bot: Bot, event: Event) {
                     user_id,
                     vec!["You should learn all dependencies before starting new card.".into()],
                 )
-                .await
-                .log_err();
-                return;
+                .await?;
+                return Ok(());
             }
 
             if let Some(rcx) = handle_revise(&card_name, bot, user_id).await {
@@ -122,17 +125,14 @@ async fn handle_event(bot: Bot, event: Event) {
                 &*get_progress(user_id),
             );
 
-            let graph_image = tokio::task::spawn_blocking(move || course_graph::print_graph(graph))
-                .await
-                .log_err()
-                .unwrap();
+            let graph_image =
+                tokio::task::spawn_blocking(move || course_graph::print_graph(graph)).await?;
             send_interactions(
                 bot,
                 user_id,
                 vec![TelegramInteraction::PersonalImage(graph_image)],
             )
-            .await
-            .log_err();
+            .await?;
         }
         Event::Revise { user_id } => {
             log::info!("user {user_id} trigger Revise event");
@@ -142,8 +142,7 @@ async fn handle_event(bot: Bot, event: Event) {
                 .await;
             if a.is_none() {
                 bot.send_message(user_id, "You don't have card to revise.")
-                    .await
-                    .log_err();
+                    .await?;
             }
         }
         Event::Clear { user_id } => {
@@ -153,9 +152,7 @@ async fn handle_event(bot: Bot, event: Event) {
             *get_course(user_id) = new_course;
             *get_progress(user_id) = new_progress;
 
-            send_interactions(bot, user_id, vec!["Progress cleared.".into()])
-                .await
-                .log_err();
+            send_interactions(bot, user_id, vec!["Progress cleared.".into()]).await?;
         }
         Event::ChangeCourseGraph { user_id } => {
             log::info!("user {user_id} trigger ChangeCourseGraph event");
@@ -167,9 +164,7 @@ async fn handle_event(bot: Bot, event: Event) {
                 drop(course);
                 let printed_graph =
                     tokio::task::spawn_blocking(move || course_graph::print_graph(generated_graph))
-                        .await
-                        .log_err()
-                        .unwrap();
+                        .await?;
                 (source, printed_graph)
             };
 
@@ -185,9 +180,7 @@ async fn handle_event(bot: Bot, event: Event) {
                     TelegramInteraction::UserInput,
                 ],
             )
-            .await
-            .log_err()
-            .unwrap()
+            .await?
             {
                 assert_eq!(answer.len(), 6);
                 #[allow(clippy::needless_range_loop)]
@@ -201,8 +194,7 @@ async fn handle_event(bot: Bot, event: Event) {
                         get_course(user_id).set_course_graph(new_course_graph);
                         *get_progress(user_id) = get_course(user_id).default_user_progress();
                         send_interactions(bot, user_id, vec!["Course graph changed".into()])
-                            .await
-                            .log_err();
+                            .await?;
                     }
                     Err(err) => {
                         let err = strip_ansi_escapes::strip_str(err);
@@ -214,8 +206,7 @@ async fn handle_event(bot: Bot, event: Event) {
                                 format!("```\n{err}\n```").into(),
                             ],
                         )
-                        .await
-                        .log_err();
+                        .await?;
                     }
                 }
             }
@@ -234,9 +225,7 @@ async fn handle_event(bot: Bot, event: Event) {
                     TelegramInteraction::UserInput,
                 ],
             )
-            .await
-            .log_err()
-            .unwrap()
+            .await?
             {
                 assert_eq!(answer.len(), 4);
                 #[allow(clippy::needless_range_loop)]
@@ -250,9 +239,7 @@ async fn handle_event(bot: Bot, event: Event) {
                         get_course(user_id).set_deque(new_deque);
                         let default_user_progress = get_course(user_id).default_user_progress();
                         *get_progress(user_id) = default_user_progress;
-                        send_interactions(bot, user_id, vec!["Deque changed".into()])
-                            .await
-                            .log_err();
+                        send_interactions(bot, user_id, vec!["Deque changed".into()]).await?;
                     }
                     Err(err) => {
                         send_interactions(
@@ -263,8 +250,7 @@ async fn handle_event(bot: Bot, event: Event) {
                                 format!("```\n{err}\n```").into(),
                             ],
                         )
-                        .await
-                        .log_err();
+                        .await?;
                     }
                 }
             }
@@ -283,8 +269,7 @@ async fn handle_event(bot: Bot, event: Event) {
                     format!("```\n{source}\n```").into(),
                 ],
             )
-            .await
-            .log_err();
+            .await?;
         }
         Event::ViewDequeSource { user_id } => {
             log::info!("user {user_id} trigger ViewDequeSource event");
@@ -294,8 +279,7 @@ async fn handle_event(bot: Bot, event: Event) {
                 user_id,
                 vec!["Deque source:".into(), format!("```\n{source}\n```").into()],
             )
-            .await
-            .log_err();
+            .await?;
         }
         Event::ViewCourseErrors { user_id } => {
             log::info!("user {user_id} trigger ViewCourseErrors event");
@@ -305,14 +289,13 @@ async fn handle_event(bot: Bot, event: Event) {
                 for error in errors {
                     msgs.push(error.into());
                 }
-                send_interactions(bot, user_id, msgs).await.log_err();
+                send_interactions(bot, user_id, msgs).await?;
             } else {
-                send_interactions(bot, user_id, vec!["No errors!".into()])
-                    .await
-                    .log_err();
+                send_interactions(bot, user_id, vec!["No errors!".into()]).await?;
             }
         }
     }
+    Ok(())
 }
 
 fn syncronize(user_id: UserId) {
