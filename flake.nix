@@ -18,8 +18,6 @@
           graphviz
         ];
 
-        RUST_LOG = "debug";
-
         shellHook = ''
           exec fish
         '';
