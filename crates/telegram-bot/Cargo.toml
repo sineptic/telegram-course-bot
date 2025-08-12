@@ -10,9 +10,7 @@ tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"] }
 rand = "0.9.0"
 
 teloxide = { version = "0.17.0", default-features = false, features = [
-    "macros",
     "rustls",
-    "ctrlc_handler",
 ] }
 
 thiserror = "2.0.12"

@@ -5,10 +5,8 @@ use teloxide::{
     payloads::SendMessageSetters,
     prelude::*,
     types::{InlineKeyboardButton, InlineKeyboardMarkup, UpdateKind},
-    utils::command::BotCommands,
 };
 
-mod commands;
 mod event_handler;
 mod handlers;
 mod interaction_types;
@@ -17,7 +15,7 @@ mod utils;
 
 use state::State;
 
-use crate::{commands::Command, interaction_types::TelegramInteraction, utils::ResultExt};
+use crate::{interaction_types::TelegramInteraction, utils::ResultExt};
 static STATE: LazyLock<DashMap<UserId, State>> = LazyLock::new(DashMap::new);
 
 #[derive(Clone, Debug)]
@@ -41,9 +39,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     dotenvy::dotenv()?;
     pretty_env_logger::init();
-    log::info!("Starting buttons bot...");
-
     let bot = Bot::from_env();
+
+    log::info!("Bot started");
 
     let (tx, rx) = tokio::sync::mpsc::channel(100);
     tokio::spawn(event_handler::event_handler(bot.clone(), rx));
@@ -61,6 +59,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let tx = tx.clone();
             let bot = bot.clone();
+            static HELP_MESSAGE: &str = "
+/card CARD_NAME — Try to complete card
+/graph — View course structure
+/help — Display all commands
+/clear — Reset your state to default(clear all progress)
+/change_course_graph
+/change_deque
+/view_course_graph_source
+/view_deque_source
+/view_course_errors
+";
             tokio::spawn(async move {
                 match update.kind {
                     UpdateKind::Message(message) => {
@@ -75,91 +84,107 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             );
                             return;
                         };
-
-                        match BotCommands::parse(
-                            text,
-                            bot.get_me().await.log_err().unwrap().username(),
-                        ) {
-                            Ok(Command::Help) => {
-                                bot.send_message(
-                                    message.chat.id,
-                                    Command::descriptions().to_string(),
-                                )
-                                .await
-                                .log_err()
-                                .unwrap();
+                        assert!(!text.is_empty());
+                        log::debug!("user {user:?} sends message '{text}'.");
+                        let (first_word, tail) = text.trim().split_once(" ").unwrap_or((text, ""));
+                        match first_word {
+                            "/help" => {
+                                bot.send_message(message.chat.id, HELP_MESSAGE)
+                                    .await
+                                    .log_err()
+                                    .unwrap();
                             }
-                            Ok(Command::Start) => {
+                            "/start" => {
                                 // TODO: onboarding
                                 bot.send_message(message.chat.id, "TODO: onboarding")
                                     .await
                                     .log_err()
                                     .unwrap();
 
-                                bot.send_message(
-                                    message.chat.id,
-                                    Command::descriptions().to_string(),
-                                )
-                                .await
-                                .log_err()
-                                .unwrap();
+                                bot.send_message(message.chat.id, HELP_MESSAGE)
+                                    .await
+                                    .log_err()
+                                    .unwrap();
                             }
-                            Ok(Command::Card(card_name)) => {
+                            "/card" => {
+                                if tail.contains(" ") {
+                                    bot.send_message(
+                                        user.id,
+                                        "Error: Card name should not contain spaces.",
+                                    )
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                                    return;
+                                }
+                                if tail.is_empty() {
+                                    bot.send_message(
+                                        user.id,
+                                        "Error: You should provide card name, you want to learn.",
+                                    )
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                                    return;
+                                }
                                 tx.send(Event::PreviewCard {
                                     user_id: user.id,
-                                    card_name,
+                                    card_name: tail.to_owned(),
                                 })
                                 .await
                                 .log_err()
                                 .unwrap();
                             }
-                            Ok(Command::Graph) => {
+                            "/graph" => {
                                 tx.send(Event::ViewGraph { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
-                            // Ok(Command::Revise) => {
-                            //     tx.send(Event::Revise { user_id: user.id }).await.log_err().unwrap();
-                            // }
-                            Ok(Command::Clear) => {
+                            "/revise" => {
+                                bot.send_message(user.id, "This command is temporarily disabled")
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                            }
+                            "/clear" => {
                                 tx.send(Event::Clear { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
-                            Ok(Command::ChangeCourseGraph) => {
+                            "/change_course_graph" => {
                                 tx.send(Event::ChangeCourseGraph { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
-                            Ok(Command::ChangeDeque) => {
+                            "/change_deque" => {
                                 tx.send(Event::ChangeDeque { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
-                            Ok(Command::ViewCourseGraphSource) => {
+                            "/view_course_graph_source" => {
                                 tx.send(Event::ViewCourseGraphSource { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
-                            Ok(Command::ViewDequeSource) => {
+                            "/view_deque_source" => {
                                 tx.send(Event::ViewDequeSource { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
-                            Ok(Command::ViewCourseErrors) => {
+                            "/view_course_errors" => {
                                 tx.send(Event::ViewCourseErrors { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
-
-                            Err(_) => {
+                            // dialogue handling
+                            _ => {
                                 let mut state = STATE.entry(user.id).or_default();
                                 let state = state.value_mut();
                                 match state {
