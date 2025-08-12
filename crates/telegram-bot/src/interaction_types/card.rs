@@ -8,9 +8,9 @@ use crate::check;
 const USAGE: &str = "Card should follow this syntax:
 # Name
 name
-# Task 1
+## Task 1
 task syntax
-# Task 2
+## Task 2
 task syntax
 ...
 ";
@@ -27,7 +27,7 @@ pub enum CardParseError {
     #[error("{USAGE}. Card should have at least 1 task")]
     NoTasks,
     #[error(
-        "{USAGE}. Task token should have '# Task ID' syntax, where ID is unique(for card) number. Line {line_ix}"
+        "{USAGE}. Task token should have '## Task ID' syntax, where ID is unique(for card) number. Line {line_ix}"
     )]
     IncorrectTaskToken { line_ix: usize },
 }
@@ -131,6 +131,6 @@ impl Card {
 fn parse_task_token(input: &str) -> Option<Option<u16>> {
     input
         .to_lowercase()
-        .strip_prefix("# task ")
+        .strip_prefix("## task ")
         .map(|tail| tail.trim().parse::<u16>().ok())
 }

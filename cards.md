@@ -1,7 +1,7 @@
 # Name
 capitals
 
-# Task 1
+## Task 1
 ![https://images.freeimages.com/images/premium/previews/1043/10437687-3d-map-of-france-with-capital-city-marked.jpg]
 What is the capital of France?
 
@@ -12,14 +12,14 @@ What is the capital of France?
 London is capital of Great Britain
 and Berlin is capital of Germany.
 
-# Task 2
+## Task 2
 What is the capital of Germany?
 
 * Berlin
 - Paris
 - London
 
-# Task 3
+## Task 3
 What is the capital of Great Britain?
 
 * London
@@ -31,7 +31,7 @@ What is the capital of Great Britain?
 # Name
 countries
 
-# Task 1
+## Task 1
 In which country is Moscow?
 
 * Russia
