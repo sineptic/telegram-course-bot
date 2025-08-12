@@ -61,7 +61,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
         return Ok(());
     };
 
-    let _ = bot.answer_callback_query(&q.id).await;
+    let _ = bot.answer_callback_query(q.id).await;
 
     let Some(mut state) = STATE.get_mut(&user_id) else {
         log::debug!("user {user_id} not in dialogue");
