@@ -1,10 +1,11 @@
+use rand::seq::SliceRandom;
 use teloxide::{
     dispatching::dialogue::GetChatId,
     types::{InputFile, ParseMode},
 };
 use tokio::sync::oneshot;
 
-use super::{commands::Command, inline_keyboard::make_keyboard, state::State, *};
+use super::{commands::Command, state::State, *};
 use crate::interaction_types::TelegramInteraction;
 
 pub type HandleResult = Result<(), Box<dyn Error + Send + Sync>>;
@@ -230,9 +231,17 @@ pub async fn progress_on_user_event(
         match &interactions[*current] {
             TelegramInteraction::OneOf(vec) => {
                 *current_id = rand::random();
+                let mut labels = vec.clone();
+                labels.shuffle(&mut rand::rng());
+                let keyboard = InlineKeyboardMarkup::new(labels.iter().map(|label| {
+                    [InlineKeyboardButton::callback(
+                        label,
+                        format!("{current_id} {label}"),
+                    )]
+                }));
                 let message = bot
                     .send_message(chat_id, "choose answer")
-                    .reply_markup(make_keyboard(vec, *current_id))
+                    .reply_markup(keyboard)
                     .await?;
 
                 *current_message = Some(message.id);

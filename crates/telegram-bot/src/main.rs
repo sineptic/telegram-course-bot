@@ -14,7 +14,6 @@ use teloxide::{
 mod commands;
 mod event_handler;
 mod handlers;
-mod inline_keyboard;
 mod interaction_types;
 mod state;
 mod utils;
