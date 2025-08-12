@@ -8,7 +8,7 @@ use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide::{Bot, prelude::Requester, types::UserId};
 
-use super::{Event, EventReceiver};
+use super::Event;
 use crate::{
     handlers::{send_interactions, set_task_for_user},
     interaction_types::{telegram_interaction::QuestionElement, *},
@@ -78,7 +78,7 @@ fn now() -> DateTime<Local> {
     **START_TIME + diff * 3600
 }
 
-pub(crate) async fn event_handler(bot: Bot, mut rx: EventReceiver) {
+pub(crate) async fn event_handler(bot: Bot, mut rx: tokio::sync::mpsc::Receiver<Event>) {
     while let Some(event) = rx.recv().await {
         let bot = bot.clone();
         tokio::spawn(async move {

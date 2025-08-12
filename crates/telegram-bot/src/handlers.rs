@@ -5,108 +5,10 @@ use teloxide::{
 };
 use tokio::sync::oneshot;
 
-use super::{commands::Command, state::State, *};
+use super::{state::State, *};
 use crate::interaction_types::TelegramInteraction;
 
 pub type HandleResult = Result<(), Box<dyn Error + Send + Sync>>;
-
-pub async fn message_handler(bot: Bot, msg: Message, events: EventSender) -> HandleResult {
-    let Some(chat_id) = msg.chat_id() else {
-        log::warn!("Unexpected chat ID");
-        return Ok(());
-    };
-    let Some(user_id) = chat_id.as_user() else {
-        bot.send_message(chat_id, "Only users can answer").await?;
-        return Ok(());
-    };
-
-    let Some(text) = msg.text() else {
-        bot.send_message(chat_id, "Message should contain text")
-            .await?;
-        return Ok(());
-    };
-
-    match BotCommands::parse(text, bot.get_me().await?.username()) {
-        Ok(Command::Help) => {
-            bot.send_message(msg.chat.id, Command::descriptions().to_string())
-                .await?;
-        }
-        Ok(Command::Start) => {
-            // TODO: onboarding
-            bot.send_message(chat_id, "TODO: onboarding").await?;
-
-            bot.send_message(msg.chat.id, Command::descriptions().to_string())
-                .await?;
-        }
-        Ok(Command::Card(card_name)) => {
-            events
-                .send(Event::PreviewCard { user_id, card_name })
-                .await?;
-        }
-        Ok(Command::Graph) => {
-            events.send(Event::ViewGraph { user_id }).await?;
-        }
-        // Ok(Command::Revise) => {
-        //     events.send(Event::Revise { user_id }).await?;
-        // }
-        Ok(Command::Clear) => {
-            events.send(Event::Clear { user_id }).await?;
-        }
-        Ok(Command::ChangeCourseGraph) => {
-            events.send(Event::ChangeCourseGraph { user_id }).await?;
-        }
-        Ok(Command::ChangeDeque) => {
-            events.send(Event::ChangeDeque { user_id }).await?;
-        }
-        Ok(Command::ViewCourseGraphSource) => {
-            events
-                .send(Event::ViewCourseGraphSource { user_id })
-                .await?;
-        }
-        Ok(Command::ViewDequeSource) => {
-            events.send(Event::ViewDequeSource { user_id }).await?;
-        }
-        Ok(Command::ViewCourseErrors) => {
-            events.send(Event::ViewCourseErrors { user_id }).await?;
-        }
-
-        Err(_) => {
-            let mut state = STATE.entry(user_id).or_default();
-            let state = state.value_mut();
-            match state {
-                State::UserEvent {
-                    interactions,
-                    current,
-                    current_id,
-                    current_message,
-                    answers,
-                    channel: _,
-                } => match &interactions[*current] {
-                    TelegramInteraction::UserInput => {
-                        let user_input = msg.text().unwrap().to_owned();
-
-                        bot.delete_message(msg.chat_id().unwrap(), current_message.unwrap())
-                            .await?;
-
-                        answers.push(user_input);
-                        *current += 1;
-                        *current_id = rand::random();
-
-                        progress_on_user_event(bot, chat_id, state).await?;
-                    }
-                    _ => {
-                        bot.send_message(msg.chat.id, "Unexpected input").await?;
-                    }
-                },
-                State::Idle => {
-                    bot.send_message(msg.chat.id, "Command not found!").await?;
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
 
 pub async fn send_interactions(
     bot: Bot,

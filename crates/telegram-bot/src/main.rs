@@ -17,7 +17,7 @@ mod utils;
 
 use state::State;
 
-use crate::utils::ResultExt;
+use crate::{commands::Command, interaction_types::TelegramInteraction, utils::ResultExt};
 static STATE: LazyLock<DashMap<UserId, State>> = LazyLock::new(DashMap::new);
 
 #[derive(Clone, Debug)]
@@ -34,8 +34,6 @@ enum Event {
     ViewDequeSource { user_id: UserId },
     ViewCourseErrors { user_id: UserId },
 }
-type EventSender = tokio::sync::mpsc::Sender<Event>;
-type EventReceiver = tokio::sync::mpsc::Receiver<Event>;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -55,7 +53,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let updates = bot
             .get_updates()
             .offset((offset + 1).try_into().unwrap())
-            .timeout(30)
+            // .timeout(30) // FIXME: can't do this(as docs sad)
             .send()
             .await?;
         for update in updates {
@@ -66,7 +64,149 @@ async fn main() -> Result<(), Box<dyn Error>> {
             tokio::spawn(async move {
                 match update.kind {
                     UpdateKind::Message(message) => {
-                        message_handler(bot, message, tx).await.log_err();
+                        let Some(ref user) = message.from else {
+                            log::warn!("Can't get user info from message {}", message.id);
+                            return;
+                        };
+                        let Some(text) = message.text() else {
+                            log::error!(
+                                "Message should contain text. This message is from user {user:?} and has id {}",
+                                message.id
+                            );
+                            return;
+                        };
+
+                        match BotCommands::parse(
+                            text,
+                            bot.get_me().await.log_err().unwrap().username(),
+                        ) {
+                            Ok(Command::Help) => {
+                                bot.send_message(
+                                    message.chat.id,
+                                    Command::descriptions().to_string(),
+                                )
+                                .await
+                                .log_err()
+                                .unwrap();
+                            }
+                            Ok(Command::Start) => {
+                                // TODO: onboarding
+                                bot.send_message(message.chat.id, "TODO: onboarding")
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+
+                                bot.send_message(
+                                    message.chat.id,
+                                    Command::descriptions().to_string(),
+                                )
+                                .await
+                                .log_err()
+                                .unwrap();
+                            }
+                            Ok(Command::Card(card_name)) => {
+                                tx.send(Event::PreviewCard {
+                                    user_id: user.id,
+                                    card_name,
+                                })
+                                .await
+                                .log_err()
+                                .unwrap();
+                            }
+                            Ok(Command::Graph) => {
+                                tx.send(Event::ViewGraph { user_id: user.id })
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                            }
+                            // Ok(Command::Revise) => {
+                            //     tx.send(Event::Revise { user_id: user.id }).await.log_err().unwrap();
+                            // }
+                            Ok(Command::Clear) => {
+                                tx.send(Event::Clear { user_id: user.id })
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                            }
+                            Ok(Command::ChangeCourseGraph) => {
+                                tx.send(Event::ChangeCourseGraph { user_id: user.id })
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                            }
+                            Ok(Command::ChangeDeque) => {
+                                tx.send(Event::ChangeDeque { user_id: user.id })
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                            }
+                            Ok(Command::ViewCourseGraphSource) => {
+                                tx.send(Event::ViewCourseGraphSource { user_id: user.id })
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                            }
+                            Ok(Command::ViewDequeSource) => {
+                                tx.send(Event::ViewDequeSource { user_id: user.id })
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                            }
+                            Ok(Command::ViewCourseErrors) => {
+                                tx.send(Event::ViewCourseErrors { user_id: user.id })
+                                    .await
+                                    .log_err()
+                                    .unwrap();
+                            }
+
+                            Err(_) => {
+                                let mut state = STATE.entry(user.id).or_default();
+                                let state = state.value_mut();
+                                match state {
+                                    State::UserEvent {
+                                        interactions,
+                                        current,
+                                        current_id,
+                                        current_message,
+                                        answers,
+                                        channel: _,
+                                    } => match &interactions[*current] {
+                                        TelegramInteraction::UserInput => {
+                                            let user_input = message.text().unwrap().to_owned();
+
+                                            bot.delete_message(
+                                                message.chat.id,
+                                                current_message.unwrap(),
+                                            )
+                                            .await
+                                            .log_err()
+                                            .unwrap();
+
+                                            answers.push(user_input);
+                                            *current += 1;
+                                            *current_id = rand::random();
+
+                                            progress_on_user_event(bot, message.chat.id, state)
+                                                .await
+                                                .log_err()
+                                                .unwrap();
+                                        }
+                                        _ => {
+                                            bot.send_message(message.chat.id, "Unexpected input")
+                                                .await
+                                                .log_err()
+                                                .unwrap();
+                                        }
+                                    },
+                                    State::Idle => {
+                                        bot.send_message(message.chat.id, "Command not found!")
+                                            .await
+                                            .log_err()
+                                            .unwrap();
+                                    }
+                                }
+                            }
+                        }
                     }
                     UpdateKind::CallbackQuery(callback_query) => {
                         callback_handler(bot, callback_query).await.log_err();
