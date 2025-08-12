@@ -142,12 +142,20 @@ pub async fn set_task_for_user(
 }
 
 pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
+    {
+        let CallbackQuery { id, from, data, .. } = &q;
+        log::debug!("get callback query, 'id: {id}, from: {from:?}, data: {data:?}'");
+    }
     let Some(chat_id) = q.chat_id() else {
-        log::warn!("can't get chat id");
+        log::error!("can't get chat id");
         return Ok(());
     };
     let Some(user_id) = chat_id.as_user() else {
         bot.send_message(chat_id, "Only users can answer").await?;
+        return Ok(());
+    };
+    let Some(response) = q.data else {
+        log::error!("reponse data should be assigned");
         return Ok(());
     };
 
@@ -159,22 +167,16 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
     };
     let state = state.value_mut();
     let State::UserEvent {
-        interactions: _,
         current,
         current_id,
         current_message,
         answers,
-        channel: _,
+        ..
     } = state
     else {
-        log::debug!("user {user_id} in different state");
+        log::warn!("user {:?} in different state", q.from);
         bot.send_message(chat_id, "You can answer only to current question")
             .await?;
-        return Ok(());
-    };
-
-    let Some(response) = q.data else {
-        log::error!("reponse data should be assigned");
         return Ok(());
     };
 
@@ -183,7 +185,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
     let response = &response[1..];
 
     if rand_id != current_id.to_string() {
-        log::debug!("user {user_id} answer to previous question");
+        log::info!("user {:?} answer to previous question", q.from);
         // TODO: maybe delete this message
         bot.send_message(chat_id, "You can answer only to current question")
             .await?;
@@ -219,11 +221,11 @@ pub async fn progress_on_user_event(
         channel,
     } = state
     else {
+        log::error!("unexpected idle state");
         panic!("Unexpected state");
     };
     loop {
-        let len = interactions.len();
-        if *current >= len {
+        if *current >= interactions.len() {
             channel.take().unwrap().send(answers.clone()).unwrap();
             *state = State::Idle;
             break;
