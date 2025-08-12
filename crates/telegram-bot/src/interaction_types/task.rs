@@ -37,7 +37,7 @@ text
 ...
             <- empty line
 'explanation'
-in format of 'question'
+formatted same as 'question'
 ...
 ";
 

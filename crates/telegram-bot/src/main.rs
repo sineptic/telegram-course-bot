@@ -85,16 +85,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             return;
                         };
                         assert!(!text.is_empty());
-                        log::debug!("user {user:?} sends message '{text}'.");
+                        log::trace!("user {user:?} sends message '{text}'.");
                         let (first_word, tail) = text.trim().split_once(" ").unwrap_or((text, ""));
                         match first_word {
                             "/help" => {
+                                log::info!(
+                                    "user {}({}) sends help command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 bot.send_message(message.chat.id, HELP_MESSAGE)
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
                             "/start" => {
+                                log::info!(
+                                    "user {}({}) sends start command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 // TODO: onboarding
                                 bot.send_message(message.chat.id, "TODO: onboarding")
                                     .await
@@ -127,6 +137,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                     .unwrap();
                                     return;
                                 }
+                                log::info!(
+                                    "user {}({}) sends card '{tail}' command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 tx.send(Event::PreviewCard {
                                     user_id: user.id,
                                     card_name: tail.to_owned(),
@@ -136,48 +151,88 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 .unwrap();
                             }
                             "/graph" => {
+                                log::info!(
+                                    "user {}({}) sends graph command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 tx.send(Event::ViewGraph { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
                             "/revise" => {
+                                log::info!(
+                                    "user {}({}) sends revise command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 bot.send_message(user.id, "This command is temporarily disabled")
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
                             "/clear" => {
+                                log::info!(
+                                    "user {}({}) sends clear command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 tx.send(Event::Clear { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
                             "/change_course_graph" => {
+                                log::info!(
+                                    "user {}({}) sends change_course_graph command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 tx.send(Event::ChangeCourseGraph { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
                             "/change_deque" => {
+                                log::info!(
+                                    "user {}({}) sends change_deque command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 tx.send(Event::ChangeDeque { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
                             "/view_course_graph_source" => {
+                                log::info!(
+                                    "user {}({}) sends view_course_graph_source command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 tx.send(Event::ViewCourseGraphSource { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
                             "/view_deque_source" => {
+                                log::info!(
+                                    "user {}({}) sends view_deque_source command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 tx.send(Event::ViewDequeSource { user_id: user.id })
                                     .await
                                     .log_err()
                                     .unwrap();
                             }
                             "/view_course_errors" => {
+                                log::info!(
+                                    "user {}({}) sends view_course_errors command",
+                                    user.username.clone().unwrap_or("unknown".into()),
+                                    user.id
+                                );
                                 tx.send(Event::ViewCourseErrors { user_id: user.id })
                                     .await
                                     .log_err()
