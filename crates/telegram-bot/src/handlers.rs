@@ -10,7 +10,7 @@ use crate::interaction_types::TelegramInteraction;
 
 pub type HandleResult = Result<(), Box<dyn Error + Send + Sync>>;
 
-pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender) -> HandleResult {
+pub async fn message_handler(bot: Bot, msg: Message, events: EventSender) -> HandleResult {
     let Some(chat_id) = msg.chat_id() else {
         log::warn!("Unexpected chat ID");
         return Ok(());
@@ -26,7 +26,7 @@ pub async fn message_handler(bot: Bot, msg: Message, me: Me, events: EventSender
         return Ok(());
     };
 
-    match BotCommands::parse(text, me.username()) {
+    match BotCommands::parse(text, bot.get_me().await?.username()) {
         Ok(Command::Help) => {
             bot.send_message(msg.chat.id, Command::descriptions().to_string())
                 .await?;
