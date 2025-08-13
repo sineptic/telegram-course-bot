@@ -24,7 +24,7 @@ pub fn get_course<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserI
 }
 
 static PROGRESS_STORE: LazyLock<DashMap<UserId, UserProgress>> = LazyLock::new(DashMap::new);
-fn get_progress<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, UserProgress> {
+pub fn get_progress<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, UserProgress> {
     PROGRESS_STORE
         .entry(user_id)
         .or_insert_with(|| get_course(user_id).default_user_progress())
@@ -104,23 +104,6 @@ pub async fn handle_event(bot: Bot, event: Event) -> Result<(), Box<dyn Error + 
         Event::PreviewCard { user_id, card_name } => {
             handle_revise(&card_name, bot, user_id).await;
         }
-
-        Event::ViewGraph { user_id } => {
-            syncronize(user_id);
-            let graph = course_graph::generate_graph(
-                get_course(user_id).get_course_graph().generate_graph(),
-                &*get_progress(user_id),
-            );
-
-            let graph_image =
-                tokio::task::spawn_blocking(move || course_graph::print_graph(graph)).await?;
-            send_interactions(
-                bot,
-                user_id,
-                vec![TelegramInteraction::PersonalImage(graph_image)],
-            )
-            .await?;
-        }
         Event::Revise { user_id } => {
             syncronize(user_id);
             let a = get_progress(user_id)
@@ -144,11 +127,17 @@ pub async fn handle_event(bot: Bot, event: Event) -> Result<(), Box<dyn Error + 
                 let course = get_course(user_id);
                 let course_graph = course.get_course_graph();
                 let source = course_graph.get_source().to_owned();
-                let generated_graph = course_graph.generate_graph();
+                let graph = course_graph.generate_structure_graph();
                 drop(course);
-                let printed_graph =
-                    tokio::task::spawn_blocking(move || course_graph::print_graph(generated_graph))
-                        .await?;
+                let printed_graph = tokio::task::spawn_blocking(move || {
+                    graphviz_rust::exec(
+                        graph,
+                        &mut graphviz_rust::printer::PrinterContext::default(),
+                        vec![graphviz_rust::cmd::Format::Png.into()],
+                    )
+                    .expect("Failed to run 'dot'")
+                })
+                .await?;
                 (source, printed_graph)
             };
 
@@ -242,7 +231,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> Result<(), Box<dyn Error + 
     Ok(())
 }
 
-fn syncronize(user_id: UserId) {
+pub fn syncronize(user_id: UserId) {
     let mut user_progress = get_progress(user_id);
     user_progress.syncronize(now().into());
     get_course(user_id)

@@ -1,5 +1,6 @@
 use std::{cmp::max, error::Error, sync::LazyLock};
 
+use course_graph::progress_store::TaskProgressStoreExt;
 use dashmap::DashMap;
 use teloxide_core::{
     payloads::SendMessageSetters,
@@ -16,7 +17,7 @@ mod utils;
 use state::State;
 
 use crate::{
-    event_handler::{get_course, handle_event},
+    event_handler::{get_course, get_progress, handle_event, syncronize},
     handlers::{HandleResult, progress_on_user_event, send_interactions},
     interaction_types::TelegramInteraction,
     utils::ResultExt,
@@ -28,7 +29,6 @@ static STATE: LazyLock<DashMap<UserId, State>> = LazyLock::new(DashMap::new);
 enum Event {
     PreviewCard { user_id: UserId, card_name: String },
     ReviseCard { user_id: UserId, card_name: String },
-    ViewGraph { user_id: UserId },
     Revise { user_id: UserId },
     Clear { user_id: UserId },
     ChangeCourseGraph { user_id: UserId },
@@ -154,7 +154,35 @@ async fn handle_message(bot: Bot, message: Message) -> HandleResult {
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            handle_event(bot, Event::ViewGraph { user_id: user.id }).await?;
+            syncronize(user.id);
+
+            let mut graph = get_course(user.id)
+                .get_course_graph()
+                .generate_structure_graph();
+
+            get_progress(user.id)
+                .generate_stmts()
+                .into_iter()
+                .for_each(|stmt| {
+                    graph.add_stmt(stmt);
+                });
+
+            send_interactions(
+                bot,
+                user.id,
+                vec![TelegramInteraction::PersonalImage(
+                    tokio::task::spawn_blocking(move || {
+                        graphviz_rust::exec(
+                            graph,
+                            &mut graphviz_rust::printer::PrinterContext::default(),
+                            vec![graphviz_rust::cmd::Format::Png.into()],
+                        )
+                        .expect("Failed to run 'dot'")
+                    })
+                    .await?,
+                )],
+            )
+            .await?;
         }
         "/revise" => {
             log::info!(

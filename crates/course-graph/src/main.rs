@@ -1,6 +1,9 @@
 use std::{collections::HashMap, str::FromStr};
 
-use course_graph::{generate_graph, graph::CourseGraph, print_graph, progress_store::TaskProgress};
+use course_graph::{
+    graph::CourseGraph,
+    progress_store::{TaskProgress, TaskProgressStoreExt},
+};
 
 fn main() {
     let course_graph = CourseGraph::from_str(
@@ -34,7 +37,7 @@ smth: d1, c0
         panic!("parsing error");
     });
 
-    let graph = course_graph.generate_graph();
+    let mut graph = course_graph.generate_structure_graph();
 
     let mut progress_store = HashMap::new();
     course_graph.init_store(&mut progress_store);
@@ -61,7 +64,19 @@ smth: d1, c0
         .map(|(id, progress)| (id.to_owned(), progress)),
     );
     course_graph.detect_recursive_fails(&mut progress_store);
-    let output = print_graph(generate_graph(graph.clone(), &progress_store));
+    progress_store
+        .generate_stmts()
+        .into_iter()
+        .for_each(|stmt| {
+            graph.add_stmt(stmt);
+        });
+
+    let output = graphviz_rust::exec(
+        graph,
+        &mut graphviz_rust::printer::PrinterContext::default(),
+        vec![graphviz_rust::cmd::Format::Png.into()],
+    )
+    .expect("Failed to run 'dot'");
 
     std::fs::write("a.png", output).expect("failed to write to 'a.png' file");
 }

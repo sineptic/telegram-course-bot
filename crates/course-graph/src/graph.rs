@@ -37,7 +37,7 @@ impl CourseGraph {
                     }),
             )
     }
-    pub fn generate_graph(&self) -> Graph {
+    pub fn generate_structure_graph(&self) -> Graph {
         Graph::Graph {
             id: id_from_string("G"),
             strict: true,
