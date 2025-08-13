@@ -5,18 +5,16 @@ use tokio::sync::oneshot;
 use super::{state::State, *};
 use crate::interaction_types::TelegramInteraction;
 
-pub type HandleResult = Result<(), Box<dyn Error + Send + Sync>>;
-
 pub async fn send_interactions(
     bot: Bot,
     user_id: UserId,
-    interactions: Vec<TelegramInteraction>,
-) -> HandleResult {
+    interactions: impl IntoIterator<Item = TelegramInteraction>,
+) -> anyhow::Result<()> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async {
         let _ = rx.await;
     });
-    set_task_for_user(bot, user_id, interactions, tx).await
+    set_task_for_user(bot, user_id, interactions.into_iter().collect(), tx).await
 }
 
 pub async fn set_task_for_user(
@@ -24,7 +22,7 @@ pub async fn set_task_for_user(
     user_id: UserId,
     interactions: Vec<TelegramInteraction>,
     channel: oneshot::Sender<Vec<String>>,
-) -> HandleResult {
+) -> anyhow::Result<()> {
     let mut state = STATE.entry(user_id).or_default();
 
     *state = State::UserEvent {
@@ -40,7 +38,7 @@ pub async fn set_task_for_user(
     Ok(())
 }
 
-pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
+pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> anyhow::Result<()> {
     {
         let CallbackQuery { id, from, data, .. } = &q;
         log::debug!("get callback query, 'id: {id}, from: {from:?}, data: {data:?}'");
@@ -99,7 +97,11 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
     Ok(())
 }
 
-pub async fn progress_on_user_event(bot: Bot, user_id: UserId, state: &mut State) -> HandleResult {
+pub async fn progress_on_user_event(
+    bot: Bot,
+    user_id: UserId,
+    state: &mut State,
+) -> anyhow::Result<()> {
     let State::UserEvent {
         interactions,
         current,

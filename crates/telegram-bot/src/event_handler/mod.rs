@@ -1,5 +1,6 @@
-use std::{error::Error, str::FromStr, sync::LazyLock};
+use std::{str::FromStr, sync::LazyLock};
 
+use anyhow::Context;
 use chrono::{DateTime, Local};
 use course::Course;
 use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
@@ -35,7 +36,7 @@ async fn get_user_answer(
     user_id: UserId,
     interactions: impl IntoIterator<Item = QuestionElement>,
     answers: Vec<String>,
-) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+) -> anyhow::Result<Option<String>> {
     let answer = get_user_answer_raw(
         bot,
         user_id,
@@ -51,7 +52,7 @@ async fn get_user_answer_raw(
     bot: Bot,
     user_id: UserId,
     interactions: impl IntoIterator<Item = TelegramInteraction>,
-) -> Result<Option<Vec<String>>, Box<dyn Error + Send + Sync>> {
+) -> anyhow::Result<Option<Vec<String>>> {
     let interactions = interactions.into_iter().collect();
     let (tx, rx) = tokio::sync::oneshot::channel();
     set_task_for_user(bot, user_id, interactions, tx).await?;
@@ -66,7 +67,7 @@ async fn get_card_answer(
     user_id: UserId,
     interactions: impl IntoIterator<Item = QuestionElement>,
     answers: Vec<String>,
-) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+) -> anyhow::Result<Option<String>> {
     // TODO: add 'I dont know' option
     get_user_answer(bot, user_id, interactions, answers).await
 }
@@ -78,7 +79,7 @@ fn now() -> DateTime<Local> {
     **START_TIME + diff * 3600
 }
 
-pub async fn handle_event(bot: Bot, event: Event) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
     match event {
         Event::ReviseCard { user_id, card_name } => {
             syncronize(user_id);
@@ -133,11 +134,12 @@ pub async fn handle_event(bot: Bot, event: Event) -> Result<(), Box<dyn Error + 
                     graphviz_rust::exec(
                         graph,
                         &mut graphviz_rust::printer::PrinterContext::default(),
-                        vec![graphviz_rust::cmd::Format::Png.into()],
+                        vec![graphviz_rust::cmd::Format::Jpeg.into()],
                     )
-                    .expect("Failed to run 'dot'")
+                    .context("Failed to run 'dot'")
                 })
-                .await?;
+                .await
+                .unwrap()?;
                 (source, printed_graph)
             };
 

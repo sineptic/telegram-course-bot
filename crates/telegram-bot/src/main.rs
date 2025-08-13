@@ -1,7 +1,9 @@
 use std::{cmp::max, error::Error, sync::LazyLock};
 
+use anyhow::Context;
 use course_graph::progress_store::TaskProgressStoreExt;
 use dashmap::DashMap;
+use graphviz_rust::{cmd::Format, printer::PrinterContext};
 use teloxide_core::{
     payloads::SendMessageSetters,
     prelude::*,
@@ -18,7 +20,7 @@ use state::State;
 
 use crate::{
     event_handler::{get_course, get_progress, handle_event, syncronize},
-    handlers::{HandleResult, progress_on_user_event, send_interactions},
+    handlers::{progress_on_user_event, send_interactions},
     interaction_types::TelegramInteraction,
     utils::ResultExt,
 };
@@ -72,7 +74,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-async fn handle_message(bot: Bot, message: Message) -> HandleResult {
+async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
     static HELP_MESSAGE: &str = "
 /card CARD_NAME — Try to complete card
 /graph — View course structure
@@ -170,16 +172,17 @@ async fn handle_message(bot: Bot, message: Message) -> HandleResult {
             send_interactions(
                 bot,
                 user.id,
-                vec![TelegramInteraction::PersonalImage(
+                [TelegramInteraction::PersonalImage(
                     tokio::task::spawn_blocking(move || {
                         graphviz_rust::exec(
                             graph,
-                            &mut graphviz_rust::printer::PrinterContext::default(),
-                            vec![graphviz_rust::cmd::Format::Png.into()],
+                            &mut PrinterContext::default(),
+                            Vec::from([Format::Jpeg.into()]),
                         )
-                        .expect("Failed to run 'dot'")
+                        .context("Failed to run 'dot'")
                     })
-                    .await?,
+                    .await
+                    .unwrap()?,
                 )],
             )
             .await?;

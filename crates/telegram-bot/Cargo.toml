@@ -29,3 +29,4 @@ serde.workspace = true
 dashmap = "6.1.0"
 strip-ansi-escapes = "0.2.1"
 url = "2.5.4"
+anyhow = "1.0.99"
