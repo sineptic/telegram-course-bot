@@ -1,8 +1,5 @@
 use rand::seq::SliceRandom;
-use teloxide::{
-    dispatching::dialogue::GetChatId,
-    types::{InputFile, ParseMode},
-};
+use teloxide_core::types::{CallbackQuery, InputFile, ParseMode};
 use tokio::sync::oneshot;
 
 use super::{state::State, *};
@@ -39,7 +36,7 @@ pub async fn set_task_for_user(
         channel: Some(channel),
     };
 
-    progress_on_user_event(bot, user_id.into(), state.value_mut()).await?;
+    progress_on_user_event(bot, user_id, state.value_mut()).await?;
     Ok(())
 }
 
@@ -48,14 +45,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
         let CallbackQuery { id, from, data, .. } = &q;
         log::debug!("get callback query, 'id: {id}, from: {from:?}, data: {data:?}'");
     }
-    let Some(chat_id) = q.chat_id() else {
-        log::error!("can't get chat id");
-        return Ok(());
-    };
-    let Some(user_id) = chat_id.as_user() else {
-        bot.send_message(chat_id, "Only users can answer").await?;
-        return Ok(());
-    };
+    let user_id = q.from.id;
     let Some(response) = q.data else {
         log::error!("reponse data should be assigned");
         return Ok(());
@@ -77,7 +67,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
     } = state
     else {
         log::warn!("user {:?} in different state", q.from);
-        bot.send_message(chat_id, "You can answer only to current question")
+        bot.send_message(user_id, "You can answer only to current question")
             .await?;
         return Ok(());
     };
@@ -89,29 +79,29 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
     if rand_id != current_id.to_string() {
         log::info!("user {:?} answer to previous question", q.from);
         // TODO: maybe delete this message
-        bot.send_message(chat_id, "You can answer only to current question")
+        bot.send_message(user_id, "You can answer only to current question")
             .await?;
         return Ok(());
     }
 
     bot.edit_message_text(
-        chat_id,
+        user_id,
         current_message.unwrap(),
-        format!("You answer: {response}",),
+        format!("You answer: {response}"),
     )
     .await?;
 
     answers.push(response.to_owned());
     *current += 1;
 
-    progress_on_user_event(bot, chat_id, state).await?;
+    progress_on_user_event(bot, user_id, state).await?;
 
     Ok(())
 }
 
 pub async fn progress_on_user_event(
     bot: Bot,
-    chat_id: ChatId,
+    user_id: UserId,
     state: &mut State,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let State::UserEvent {
@@ -144,7 +134,7 @@ pub async fn progress_on_user_event(
                     )]
                 }));
                 let message = bot
-                    .send_message(chat_id, "choose answer")
+                    .send_message(user_id, "choose answer")
                     .reply_markup(keyboard)
                     .await?;
 
@@ -152,28 +142,28 @@ pub async fn progress_on_user_event(
                 break;
             }
             TelegramInteraction::Text(text) => {
-                bot.send_message(chat_id, text)
+                bot.send_message(user_id, text)
                     .parse_mode(ParseMode::MarkdownV2)
                     .await?;
                 *current += 1;
                 answers.push(String::new());
             }
             TelegramInteraction::UserInput => {
-                let message = bot.send_message(chat_id, "Please enter your input").await?;
+                let message = bot.send_message(user_id, "Please enter your input").await?;
 
                 *current_message = Some(message.id);
                 *current_id = rand::random();
                 break;
             }
             TelegramInteraction::Image(link) => {
-                bot.send_photo(chat_id, InputFile::url(link.clone()))
+                bot.send_photo(user_id, InputFile::url(link.clone()))
                     .await?;
                 *current += 1;
                 answers.push(String::new());
             }
             TelegramInteraction::PersonalImage(bytes) => {
                 // FIXME: don't clone bytes(image)
-                bot.send_photo(chat_id, InputFile::memory(bytes.clone()))
+                bot.send_photo(user_id, InputFile::memory(bytes.clone()))
                     .await?;
                 *current += 1;
                 answers.push(String::new());

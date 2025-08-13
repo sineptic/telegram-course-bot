@@ -6,7 +6,7 @@ use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
 use dashmap::DashMap;
 use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
-use teloxide::{Bot, prelude::Requester, types::UserId};
+use teloxide_core::{Bot, prelude::Requester, types::UserId};
 
 use super::Event;
 use crate::{

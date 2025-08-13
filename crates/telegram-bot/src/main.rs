@@ -1,7 +1,7 @@
 use std::{cmp::max, error::Error, sync::LazyLock};
 
 use dashmap::DashMap;
-use teloxide::{
+use teloxide_core::{
     payloads::SendMessageSetters,
     prelude::*,
     types::{InlineKeyboardButton, InlineKeyboardMarkup, UpdateKind},
@@ -266,10 +266,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                             *current += 1;
                                             *current_id = rand::random();
 
-                                            progress_on_user_event(bot, message.chat.id, state)
-                                                .await
-                                                .log_err()
-                                                .unwrap();
+                                            progress_on_user_event(
+                                                bot,
+                                                message
+                                                    .from
+                                                    .ok_or("Message should contain user id")
+                                                    .log_err()
+                                                    .unwrap()
+                                                    .id,
+                                                state,
+                                            )
+                                            .await
+                                            .log_err()
+                                            .unwrap();
                                         }
                                         _ => {
                                             bot.send_message(message.chat.id, "Unexpected input")

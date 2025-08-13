@@ -1,4 +1,4 @@
-use teloxide::types::MessageId;
+use teloxide_core::types::MessageId;
 use tokio::sync::oneshot;
 
 use crate::interaction_types::TelegramInteraction;
