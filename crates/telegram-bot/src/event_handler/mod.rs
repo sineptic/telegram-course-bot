@@ -19,7 +19,7 @@ mod progress_store;
 
 mod course;
 static COURSES_STORE: LazyLock<DashMap<UserId, Course>> = LazyLock::new(DashMap::new);
-fn get_course<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, Course> {
+pub fn get_course<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, Course> {
     COURSES_STORE.entry(user_id).or_default()
 }
 
@@ -78,17 +78,7 @@ fn now() -> DateTime<Local> {
     **START_TIME + diff * 3600
 }
 
-pub(crate) async fn event_handler(bot: Bot, mut rx: tokio::sync::mpsc::Receiver<Event>) {
-    while let Some(event) = rx.recv().await {
-        let bot = bot.clone();
-        tokio::spawn(async move {
-            let result = handle_event(bot, event).await;
-            result.log_err();
-        });
-    }
-}
-
-async fn handle_event(bot: Bot, event: Event) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn handle_event(bot: Bot, event: Event) -> Result<(), Box<dyn Error + Send + Sync>> {
     match event {
         Event::ReviseCard { user_id, card_name } => {
             syncronize(user_id);
@@ -246,42 +236,6 @@ async fn handle_event(bot: Bot, event: Event) -> Result<(), Box<dyn Error + Send
                         .await?;
                     }
                 }
-            }
-        }
-        Event::ViewCourseGraphSource { user_id } => {
-            let source = get_course(user_id)
-                .get_course_graph()
-                .get_source()
-                .to_owned();
-            send_interactions(
-                bot,
-                user_id,
-                vec![
-                    "Course graph source:".into(),
-                    format!("```\n{source}\n```").into(),
-                ],
-            )
-            .await?;
-        }
-        Event::ViewDequeSource { user_id } => {
-            let source = get_course(user_id).get_deque().source.to_owned();
-            send_interactions(
-                bot,
-                user_id,
-                vec!["Deque source:".into(), format!("```\n{source}\n```").into()],
-            )
-            .await?;
-        }
-        Event::ViewCourseErrors { user_id } => {
-            if let Some(errors) = get_course(user_id).get_errors() {
-                let mut msgs = Vec::new();
-                msgs.push("Errors:".into());
-                for error in errors {
-                    msgs.push(error.into());
-                }
-                send_interactions(bot, user_id, msgs).await?;
-            } else {
-                send_interactions(bot, user_id, vec!["No errors!".into()]).await?;
             }
         }
     }

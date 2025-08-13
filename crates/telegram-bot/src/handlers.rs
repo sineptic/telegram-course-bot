@@ -11,7 +11,7 @@ pub async fn send_interactions(
     bot: Bot,
     user_id: UserId,
     interactions: Vec<TelegramInteraction>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> HandleResult {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async {
         let _ = rx.await;
@@ -24,7 +24,7 @@ pub async fn set_task_for_user(
     user_id: UserId,
     interactions: Vec<TelegramInteraction>,
     channel: oneshot::Sender<Vec<String>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+) -> HandleResult {
     let mut state = STATE.entry(user_id).or_default();
 
     *state = State::UserEvent {
@@ -99,11 +99,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> HandleResult {
     Ok(())
 }
 
-pub async fn progress_on_user_event(
-    bot: Bot,
-    user_id: UserId,
-    state: &mut State,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
+pub async fn progress_on_user_event(bot: Bot, user_id: UserId, state: &mut State) -> HandleResult {
     let State::UserEvent {
         interactions,
         current,
