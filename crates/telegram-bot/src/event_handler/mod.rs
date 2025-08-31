@@ -158,7 +158,6 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                 let course_graph = &course.structure;
                 let source = course_graph.get_source().to_owned();
                 let graph = course_graph.generate_structure_graph();
-                drop(course);
                 let printed_graph = tokio::task::spawn_blocking(move || {
                     graphviz_rust::exec(
                         graph,

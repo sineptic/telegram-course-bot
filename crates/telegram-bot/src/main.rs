@@ -1,4 +1,4 @@
-use std::{cmp::max, collections::BTreeMap, sync::LazyLock};
+use std::{cmp::max, sync::LazyLock};
 
 use anyhow::Context;
 use course_graph::progress_store::TaskProgressStoreExt;
@@ -10,7 +10,6 @@ use teloxide_core::{
     prelude::*,
     types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, UpdateKind},
 };
-use tokio::sync::Mutex;
 
 mod event_handler;
 mod handlers;
@@ -111,7 +110,7 @@ mod database {
         pub fn get_course_mut(&mut self, id: CourseId) -> Option<&mut Course> {
             self.data.get_mut(&id)
         }
-        pub fn select_courses(&self, owner: UserId) -> Option<Vec<&Course>> {
+        pub fn select_courses_by_owner(&self, owner: UserId) -> Option<Vec<&Course>> {
             self.owners_index.get(&owner).map(|course_ids| {
                 course_ids
                     .iter()
@@ -296,7 +295,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
         }
         "/card" => {
             let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
-            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
+            let course_id = CourseId(first_word.parse().unwrap());
             if tail.contains(" ") {
                 bot.send_message(user.id, "Error: Card name should not contain spaces.")
                     .await?;
@@ -326,8 +325,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             .await?;
         }
         "/graph" => {
-            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
-            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
+            let course_id = CourseId(tail.parse::<u64>().unwrap());
             log::info!(
                 "user {}({}) sends graph command",
                 user.username.clone().unwrap_or("unknown".into()),
@@ -387,8 +385,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             handle_event(bot, Event::Clear { user_id: user.id }).await?;
         }
         "/change_course_graph" => {
-            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
-            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
+            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends change_course_graph command",
                 user.username.clone().unwrap_or("unknown".into()),
@@ -404,8 +401,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             .await?;
         }
         "/change_deque" => {
-            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
-            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
+            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends change_deque command",
                 user.username.clone().unwrap_or("unknown".into()),
@@ -421,8 +417,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             .await?;
         }
         "/view_course_graph_source" => {
-            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
-            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
+            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends view_course_graph_source command",
                 user.username.clone().unwrap_or("unknown".into()),
@@ -449,8 +444,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             .await?;
         }
         "/view_deque_source" => {
-            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
-            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
+            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends view_deque_source command",
                 user.username.clone().unwrap_or("unknown".into()),
@@ -478,8 +472,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             .await?;
         }
         "/view_course_errors" => {
-            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
-            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
+            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends view_course_errors command",
                 user.username.clone().unwrap_or("unknown".into()),
