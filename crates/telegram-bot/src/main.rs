@@ -226,15 +226,16 @@ async fn main() {
 
 async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
     static HELP_MESSAGE: &str = "
-/card CARD_NAME — Try to complete card
-/graph — View course structure
+/create_course - Create new course and get it's ID
+/card CARD_NAME COURSE_ID — Try to complete card
+/graph COURSE_ID— View course structure
 /help — Display all commands
 /clear — Reset your state to default(clear all progress)
-/change_course_graph
-/change_deque
-/view_course_graph_source
-/view_deque_source
-/view_course_errors
+/change_course_graph COURSE_ID
+/change_deque COURSE_ID
+/view_course_graph_source COURSE_ID
+/view_deque_source COURSE_ID
+/view_course_errors COURSE_ID
 ";
 
     let Some(ref user) = message.from else {
