@@ -274,8 +274,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                     .into(),
                 ],
             )
-            .await
-            .log_err();
+            .await?;
         }
         "/view_course_errors" => {
             log::info!(
@@ -289,11 +288,9 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 for error in errors {
                     msgs.push(error.into());
                 }
-                send_interactions(bot, user.id, msgs).await.log_err();
+                send_interactions(bot, user.id, msgs).await?;
             } else {
-                send_interactions(bot, user.id, vec!["No errors!".into()])
-                    .await
-                    .log_err();
+                send_interactions(bot, user.id, vec!["No errors!".into()]).await?;
             }
         }
         // dialogue handling
@@ -314,8 +311,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
 
                         bot.delete_message(message.chat.id, current_message.unwrap())
                             .await
-                            .log_err()
-                            .unwrap();
+                            .log_err();
 
                         answers.push(user_input);
                         *current += 1;
@@ -325,9 +321,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                             bot,
                             message
                                 .from
-                                .ok_or("Message should contain user id")
-                                .log_err()
-                                .unwrap()
+                                .ok_or(anyhow::anyhow!("Message should contain user id"))?
                                 .id,
                             state,
                         )
@@ -337,16 +331,12 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                     }
                     _ => {
                         bot.send_message(message.chat.id, "Unexpected input")
-                            .await
-                            .log_err()
-                            .unwrap();
+                            .await?;
                     }
                 },
                 State::Idle => {
                     bot.send_message(message.chat.id, "Command not found!")
-                        .await
-                        .log_err()
-                        .unwrap();
+                        .await?;
                 }
             }
         }
