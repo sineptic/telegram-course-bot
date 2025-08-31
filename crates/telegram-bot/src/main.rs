@@ -1,4 +1,4 @@
-use std::{cmp::max, sync::LazyLock};
+use std::{cmp::max, collections::BTreeMap, sync::LazyLock};
 
 use anyhow::Context;
 use course_graph::progress_store::TaskProgressStoreExt;
@@ -10,6 +10,7 @@ use teloxide_core::{
     prelude::*,
     types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, UpdateKind},
 };
+use tokio::sync::Mutex;
 
 mod event_handler;
 mod handlers;
@@ -20,7 +21,10 @@ mod utils;
 use state::State;
 
 use crate::{
-    event_handler::{get_course, get_progress, handle_event, syncronize},
+    event_handler::{
+        course::{DEFAULT_COURSE_GRAPH, DEFAULT_DEQUE},
+        get_progress, handle_event, syncronize,
+    },
     handlers::{progress_on_user_event, send_interactions},
     interaction_types::TelegramInteraction,
     utils::ResultExt,
@@ -30,12 +34,149 @@ static STATE: LazyLock<DashMap<UserId, State>> = LazyLock::new(DashMap::new);
 #[derive(Clone, Debug)]
 #[allow(unused)]
 enum Event {
-    PreviewCard { user_id: UserId, card_name: String },
-    ReviseCard { user_id: UserId, card_name: String },
-    Revise { user_id: UserId },
-    Clear { user_id: UserId },
-    ChangeCourseGraph { user_id: UserId },
-    ChangeDeque { user_id: UserId },
+    PreviewCard {
+        user_id: UserId,
+        course_id: CourseId,
+        card_name: String,
+    },
+    ReviseCard {
+        user_id: UserId,
+        course_id: CourseId,
+        card_name: String,
+    },
+    Revise {
+        user_id: UserId,
+    },
+    Clear {
+        user_id: UserId,
+    },
+    ChangeCourseGraph {
+        user_id: UserId,
+        course_id: CourseId,
+    },
+    ChangeDeque {
+        user_id: UserId,
+        course_id: CourseId,
+    },
+}
+
+use database::*;
+mod database {
+    pub static COURSES_STORAGE: LazyLock<Mutex<Courses>> = LazyLock::new(|| {
+        Mutex::new(Courses {
+            next_course_id: 0,
+            data: BTreeMap::new(),
+            owners_index: BTreeMap::new(),
+        })
+    });
+
+    use std::{collections::BTreeMap, sync::LazyLock};
+
+    use course_graph::graph::CourseGraph;
+    use teloxide_core::types::UserId;
+    use tokio::sync::Mutex;
+
+    use crate::{
+        event_handler::{course::DEFAULT_COURSE_GRAPH, progress_store::UserProgress},
+        interaction_types::deque::Deque,
+    };
+
+    #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
+    pub struct CourseId(pub u64);
+    #[derive(Clone)]
+    pub struct Course {
+        pub owner_id: UserId,
+        pub structure: CourseGraph,
+        pub tasks: Deque,
+    }
+    pub struct Courses {
+        next_course_id: u64,
+        data: BTreeMap<CourseId, Course>,
+        owners_index: BTreeMap<UserId, Vec<CourseId>>,
+    }
+    impl Courses {
+        pub fn insert(&mut self, course: Course) -> CourseId {
+            let course_id = CourseId(self.next_course_id);
+            self.next_course_id += 1;
+            self.owners_index
+                .entry(course.owner_id)
+                .or_default()
+                .push(course_id);
+            self.data.insert(course_id, course);
+            course_id
+        }
+        pub fn get_course(&self, id: CourseId) -> Option<&Course> {
+            self.data.get(&id)
+        }
+        pub fn get_course_mut(&mut self, id: CourseId) -> Option<&mut Course> {
+            self.data.get_mut(&id)
+        }
+        pub fn select_courses(&self, owner: UserId) -> Option<Vec<&Course>> {
+            self.owners_index.get(&owner).map(|course_ids| {
+                course_ids
+                    .iter()
+                    .map(|course_id| self.data.get(course_id).unwrap())
+                    .collect::<Vec<_>>()
+            })
+        }
+    }
+    impl Courses {
+        pub fn partial_serialize(&self) -> (u64, Vec<(CourseId, Course)>) {
+            (
+                self.next_course_id,
+                self.data
+                    .iter()
+                    .map(|(id, value)| (*id, value.clone()))
+                    .collect::<Vec<_>>(),
+            )
+        }
+        pub fn partial_deserialize(next_course_id: u64, courses: Vec<(CourseId, Course)>) -> Self {
+            let mut owners_index: BTreeMap<UserId, Vec<CourseId>> = BTreeMap::new();
+            let mut data = BTreeMap::new();
+            for (id, course) in courses {
+                owners_index.entry(course.owner_id).or_default().push(id);
+                assert!(data.insert(id, course).is_none());
+            }
+            Self {
+                next_course_id,
+                owners_index,
+                data,
+            }
+        }
+    }
+    impl Course {
+        pub fn default_user_progress(&self) -> UserProgress {
+            let mut user_progress = UserProgress::default();
+            self.structure.init_store(&mut user_progress);
+            user_progress
+        }
+        pub fn get_errors(&self) -> Option<Vec<String>> {
+            let deque = &self.tasks;
+            let course_graph = &self.structure;
+            let mut errors = Vec::new();
+
+            course_graph
+                .cards()
+                .keys()
+                .filter(|&id| !deque.tasks.contains_key(id))
+                .map(|id| format!("Graph has '{id}' card, but deque(cards.md) doesn't."))
+                .for_each(|item| errors.push(item));
+            deque
+                .tasks
+                .keys()
+                .filter(|x| !DEFAULT_COURSE_GRAPH.cards().contains_key(*x))
+                .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
+                .for_each(|item| {
+                    errors.push(item);
+                });
+
+            if errors.is_empty() {
+                None
+            } else {
+                Some(errors)
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -138,7 +279,24 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
 
             bot.send_message(message.chat.id, HELP_MESSAGE).await?;
         }
+        "/create_course" => {
+            log::info!(
+                "user {}({}) sends create_course command",
+                user.username.clone().unwrap_or("unknown".into()),
+                user.id
+            );
+            let mut courses = COURSES_STORAGE.lock().await;
+            let id = courses.insert(Course {
+                owner_id: user.id,
+                structure: DEFAULT_COURSE_GRAPH.clone(),
+                tasks: DEFAULT_DEQUE.clone(),
+            });
+            bot.send_message(user.id, format!("Course created with id {}", id.0))
+                .await?;
+        }
         "/card" => {
+            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
+            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
             if tail.contains(" ") {
                 bot.send_message(user.id, "Error: Card name should not contain spaces.")
                     .await?;
@@ -161,24 +319,32 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 bot,
                 Event::PreviewCard {
                     user_id: user.id,
+                    course_id,
                     card_name: tail.to_owned(),
                 },
             )
             .await?;
         }
         "/graph" => {
+            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
+            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
             log::info!(
                 "user {}({}) sends graph command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            syncronize(user.id);
+            syncronize(user.id, course_id);
 
-            let mut graph = get_course(user.id)
-                .get_course_graph()
+            let mut graph = COURSES_STORAGE
+                .lock()
+                .await
+                .get_course(course_id)
+                .unwrap()
+                .structure
                 .generate_structure_graph();
 
-            get_progress(user.id)
+            get_progress(course_id, user.id)
+                .await
                 .generate_stmts()
                 .into_iter()
                 .for_each(|stmt| {
@@ -221,22 +387,42 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             handle_event(bot, Event::Clear { user_id: user.id }).await?;
         }
         "/change_course_graph" => {
+            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
+            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
             log::info!(
                 "user {}({}) sends change_course_graph command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            handle_event(bot, Event::ChangeCourseGraph { user_id: user.id }).await?;
+            handle_event(
+                bot,
+                Event::ChangeCourseGraph {
+                    user_id: user.id,
+                    course_id,
+                },
+            )
+            .await?;
         }
         "/change_deque" => {
+            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
+            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
             log::info!(
                 "user {}({}) sends change_deque command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            handle_event(bot, Event::ChangeDeque { user_id: user.id }).await?;
+            handle_event(
+                bot,
+                Event::ChangeDeque {
+                    user_id: user.id,
+                    course_id,
+                },
+            )
+            .await?;
         }
         "/view_course_graph_source" => {
+            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
+            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
             log::info!(
                 "user {}({}) sends view_course_graph_source command",
                 user.username.clone().unwrap_or("unknown".into()),
@@ -249,7 +435,13 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                     "Course graph source:".into(),
                     format!(
                         "```\n{}\n```",
-                        get_course(user.id).get_course_graph().get_source()
+                        COURSES_STORAGE
+                            .lock()
+                            .await
+                            .get_course(course_id)
+                            .unwrap()
+                            .structure
+                            .get_source()
                     )
                     .into(),
                 ],
@@ -257,6 +449,8 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             .await?;
         }
         "/view_deque_source" => {
+            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
+            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
             log::info!(
                 "user {}({}) sends view_deque_source command",
                 user.username.clone().unwrap_or("unknown".into()),
@@ -269,7 +463,14 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                     "Deque source:".into(),
                     format!(
                         "```\n{}\n```",
-                        get_course(user.id).get_deque().source.to_owned()
+                        COURSES_STORAGE
+                            .lock()
+                            .await
+                            .get_course(course_id)
+                            .unwrap()
+                            .tasks
+                            .source
+                            .to_owned()
                     )
                     .into(),
                 ],
@@ -277,12 +478,20 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             .await?;
         }
         "/view_course_errors" => {
+            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
+            let course_id = CourseId(u64::from_str_radix(first_word, 10).unwrap());
             log::info!(
                 "user {}({}) sends view_course_errors command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            if let Some(errors) = get_course(user.id).get_errors() {
+            if let Some(errors) = COURSES_STORAGE
+                .lock()
+                .await
+                .get_course(course_id)
+                .unwrap()
+                .get_errors()
+            {
                 let mut msgs = Vec::new();
                 msgs.push("Errors:".into());
                 for error in errors {

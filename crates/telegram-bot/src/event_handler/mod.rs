@@ -1,34 +1,49 @@
-use std::{str::FromStr, sync::LazyLock};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::DerefMut,
+    str::FromStr,
+    sync::LazyLock,
+};
 
 use anyhow::Context;
 use chrono::{DateTime, Local};
-use course::Course;
 use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
-use dashmap::DashMap;
 use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide_core::{Bot, prelude::Requester, types::UserId};
+use tokio::sync::{Mutex, MutexGuard};
 
 use super::Event;
 use crate::{
+    COURSES_STORAGE,
+    database::CourseId,
     handlers::{send_interactions, set_task_for_user},
     interaction_types::{telegram_interaction::QuestionElement, *},
     utils::{Immutable, ResultExt},
 };
 
-mod progress_store;
+pub mod progress_store;
 
-mod course;
-static COURSES_STORE: LazyLock<DashMap<UserId, Course>> = LazyLock::new(DashMap::new);
-pub fn get_course<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, Course> {
-    COURSES_STORE.entry(user_id).or_default()
-}
-
-static PROGRESS_STORE: LazyLock<DashMap<UserId, UserProgress>> = LazyLock::new(DashMap::new);
-pub fn get_progress<'a>(user_id: UserId) -> dashmap::mapref::one::RefMut<'a, UserId, UserProgress> {
-    PROGRESS_STORE
-        .entry(user_id)
-        .or_insert_with(|| get_course(user_id).default_user_progress())
+pub mod course;
+static PROGRESS_STORE: LazyLock<Mutex<HashMap<UserId, BTreeMap<CourseId, UserProgress>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+pub async fn get_progress(
+    course_id: CourseId,
+    user_id: UserId,
+) -> impl DerefMut<Target = UserProgress> {
+    let def = crate::COURSES_STORAGE
+        .lock()
+        .await
+        .get_course(course_id)
+        .unwrap()
+        .default_user_progress();
+    MutexGuard::map(PROGRESS_STORE.lock().await, |store| {
+        store
+            .entry(user_id)
+            .or_default()
+            .entry(course_id)
+            .or_insert(def)
+    })
 }
 
 async fn get_user_answer(
@@ -81,10 +96,14 @@ fn now() -> DateTime<Local> {
 
 pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
     match event {
-        Event::ReviseCard { user_id, card_name } => {
-            syncronize(user_id);
+        Event::ReviseCard {
+            user_id,
+            course_id,
+            card_name,
+        } => {
+            syncronize(user_id, course_id);
             if matches!(
-                get_progress(user_id)[&card_name],
+                get_progress(course_id, user_id).await[&card_name],
                 TaskProgress::NotStarted {
                     could_be_learned: false
                 }
@@ -98,35 +117,45 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                 return Ok(());
             }
 
-            if let Some(rcx) = handle_revise(&card_name, bot, user_id).await {
-                get_progress(user_id).repetition(&card_name, rcx);
+            if let Some(rcx) = handle_revise(&card_name, bot, user_id, course_id).await {
+                get_progress(course_id, user_id)
+                    .await
+                    .repetition(&card_name, rcx);
             }
         }
-        Event::PreviewCard { user_id, card_name } => {
-            handle_revise(&card_name, bot, user_id).await;
+        Event::PreviewCard {
+            user_id,
+            course_id,
+            card_name,
+        } => {
+            handle_revise(&card_name, bot, user_id, course_id).await;
         }
         Event::Revise { user_id } => {
-            syncronize(user_id);
-            let a = get_progress(user_id)
-                .revise(async |id| handle_revise(id, bot.clone(), user_id).await.unwrap())
-                .await;
-            if a.is_none() {
-                bot.send_message(user_id, "You don't have card to revise.")
-                    .await?;
-            }
+            todo!("select from all users deques");
+            // syncronize(user_id, course_id);
+            //
+            // let a = get_progress(user_id)
+            //     .revise(async |id| handle_revise(id, bot.clone(), user_id).await.unwrap())
+            //     .await;
+            // if a.is_none() {
+            //     bot.send_message(user_id, "You don't have card to revise.")
+            //         .await?;
+            // }
         }
         Event::Clear { user_id } => {
-            let new_course = Course::default();
-            let new_progress = new_course.default_user_progress();
-            *get_course(user_id) = new_course;
-            *get_progress(user_id) = new_progress;
+            PROGRESS_STORE.lock().await.insert(user_id, BTreeMap::new());
 
             send_interactions(bot, user_id, vec!["Progress cleared.".into()]).await?;
         }
-        Event::ChangeCourseGraph { user_id } => {
+        Event::ChangeCourseGraph { user_id, course_id } => {
             let (source, printed_graph) = {
-                let course = get_course(user_id);
-                let course_graph = course.get_course_graph();
+                let course = COURSES_STORAGE.lock().await;
+                let course = course.get_course(course_id).unwrap();
+                if course.owner_id != user_id {
+                    bot.send_message(user_id, "It's not your course.").await?;
+                    todo!();
+                }
+                let course_graph = &course.structure;
                 let source = course_graph.get_source().to_owned();
                 let graph = course_graph.generate_structure_graph();
                 drop(course);
@@ -166,8 +195,12 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
 
                 match CourseGraph::from_str(answer) {
                     Ok(new_course_graph) => {
-                        get_course(user_id).set_course_graph(new_course_graph);
-                        *get_progress(user_id) = get_course(user_id).default_user_progress();
+                        COURSES_STORAGE
+                            .lock()
+                            .await
+                            .get_course_mut(course_id)
+                            .unwrap()
+                            .structure = new_course_graph;
                         send_interactions(bot, user_id, vec!["Course graph changed".into()])
                             .await?;
                     }
@@ -186,8 +219,14 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                 }
             }
         }
-        Event::ChangeDeque { user_id } => {
-            let source = get_course(user_id).get_deque().source.clone();
+        Event::ChangeDeque { user_id, course_id } => {
+            let courses = COURSES_STORAGE.lock().await;
+            let course = courses.get_course(course_id).unwrap();
+            if course.owner_id != user_id {
+                bot.send_message(user_id, "It's not your course.").await?;
+                todo!();
+            }
+            let source = course.tasks.source.clone();
 
             if let Some(answer) = get_user_answer_raw(
                 bot.clone(),
@@ -210,9 +249,12 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
 
                 match deque::from_str(answer, true) {
                     Ok(new_deque) => {
-                        get_course(user_id).set_deque(new_deque);
-                        let default_user_progress = get_course(user_id).default_user_progress();
-                        *get_progress(user_id) = default_user_progress;
+                        COURSES_STORAGE
+                            .lock()
+                            .await
+                            .get_course_mut(course_id)
+                            .unwrap()
+                            .tasks = new_deque;
                         send_interactions(bot, user_id, vec!["Deque changed".into()]).await?;
                     }
                     Err(err) => {
@@ -233,25 +275,34 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn syncronize(user_id: UserId) {
-    let mut user_progress = get_progress(user_id);
-    user_progress.syncronize(now().into());
-    get_course(user_id)
-        .get_course_graph()
-        .detect_recursive_fails(&mut *user_progress);
+pub fn syncronize(user_id: UserId, course_id: CourseId) {
+    return;
+    todo!();
+    // let mut user_progress = get_progress(course_id, user_id);
+    // user_progress.syncronize(now().into());
+    // COURSES_STORAGE.get_course(course_id).unwrap().structure;
+    // get_course(user_id)
+    //     .get_course_graph()
+    //     .detect_recursive_fails(&mut *user_progress);
 }
 
-async fn handle_revise(id: &String, bot: Bot, user_id: UserId) -> Option<RepetitionContext> {
+async fn handle_revise(
+    id: &String,
+    bot: Bot,
+    user_id: UserId,
+    course_id: CourseId,
+) -> Option<RepetitionContext> {
     let Task {
         question,
         options,
         answer,
         explanation,
     } = {
-        let course = get_course(user_id);
+        let course = COURSES_STORAGE.lock().await;
+        let course = course.get_course(course_id).unwrap();
         card::random_task(
             {
-                if let Some(x) = course.get_deque().tasks.get(id) {
+                if let Some(x) = course.tasks.tasks.get(id) {
                     x
                 } else {
                     send_interactions(bot, user_id, vec!["Card with this name not found".into()])

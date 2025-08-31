@@ -8,7 +8,7 @@ use crate::{
     utils::Immutable,
 };
 
-static DEFAULT_COURSE_GRAPH: LazyLock<Immutable<CourseGraph>> = LazyLock::new(|| {
+pub static DEFAULT_COURSE_GRAPH: LazyLock<Immutable<CourseGraph>> = LazyLock::new(|| {
     CourseGraph::from_str(include_str!("../../../../graph"))
         .unwrap_or_else(|err| {
             println!("{err}");
@@ -17,7 +17,7 @@ static DEFAULT_COURSE_GRAPH: LazyLock<Immutable<CourseGraph>> = LazyLock::new(||
         .into()
 });
 
-static DEFAULT_DEQUE: LazyLock<Immutable<Deque>> = LazyLock::new(|| {
+pub static DEFAULT_DEQUE: LazyLock<Immutable<Deque>> = LazyLock::new(|| {
     let deque = deque::from_str(include_str!("../../../../cards.md"), true).unwrap();
     let mut errors = Vec::new();
     DEFAULT_COURSE_GRAPH
@@ -103,10 +103,5 @@ impl Course {
     pub fn set_deque(&mut self, deque: Deque) {
         self.deque = Some(deque.into());
         self.has_errors = self.get_errors().is_some();
-    }
-    pub fn default_user_progress(&self) -> UserProgress {
-        let mut user_progress = UserProgress::default();
-        self.get_course_graph().init_store(&mut user_progress);
-        user_progress
     }
 }

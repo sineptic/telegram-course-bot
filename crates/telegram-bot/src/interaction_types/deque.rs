@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use super::{Card, Task};
 use crate::check;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Deque {
     pub source: String,
     pub tasks: BTreeMap<String, BTreeMap<u16, Task>>,
