@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use course_graph::graph::CourseGraph;
+
 use super::{Card, Task};
 use crate::check;
 
@@ -43,4 +45,34 @@ pub fn from_str(input: &str, multiline_messages: bool) -> Result<Deque, DequePar
     }
     check!(!deque.tasks.is_empty(), DequeParseError::NoCards);
     Ok(deque)
+}
+
+impl Default for Deque {
+    fn default() -> Self {
+        let deque = from_str(include_str!("../../../../cards.md"), true).unwrap();
+        let mut errors = Vec::new();
+        CourseGraph::default()
+            .cards()
+            .keys()
+            .filter(|&id| !deque.tasks.contains_key(id))
+            .map(|id| format!("Graph has '{id}' card, but deque(cards.md) doesn't."))
+            .for_each(|item| {
+                errors.push(item);
+            });
+        deque
+            .tasks
+            .keys()
+            .filter(|x| !CourseGraph::default().cards().contains_key(*x))
+            .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
+            .for_each(|item| {
+                errors.push(item);
+            });
+        if !errors.is_empty() {
+            panic!(
+                "Cards in deque(cards.md) and graph(graph) are different.\n{}",
+                errors.join("\n")
+            );
+        }
+        deque
+    }
 }

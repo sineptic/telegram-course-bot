@@ -24,7 +24,6 @@ use crate::{
 
 pub mod progress_store;
 
-pub mod course;
 static PROGRESS_STORE: LazyLock<Mutex<HashMap<UserId, BTreeMap<CourseId, UserProgress>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 pub async fn get_progress(

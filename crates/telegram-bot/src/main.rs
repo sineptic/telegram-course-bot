@@ -1,7 +1,7 @@
 use std::{cmp::max, sync::LazyLock};
 
 use anyhow::Context;
-use course_graph::progress_store::TaskProgressStoreExt;
+use course_graph::{graph::CourseGraph, progress_store::TaskProgressStoreExt};
 use dashmap::DashMap;
 use graphviz_rust::{cmd::Format, printer::PrinterContext};
 use teloxide_core::{
@@ -20,12 +20,9 @@ mod utils;
 use state::State;
 
 use crate::{
-    event_handler::{
-        course::{DEFAULT_COURSE_GRAPH, DEFAULT_DEQUE},
-        get_progress, handle_event, syncronize,
-    },
+    event_handler::{get_progress, handle_event, syncronize},
     handlers::{progress_on_user_event, send_interactions},
-    interaction_types::TelegramInteraction,
+    interaction_types::{TelegramInteraction, deque::Deque},
     utils::ResultExt,
 };
 static STATE: LazyLock<DashMap<UserId, State>> = LazyLock::new(DashMap::new);
@@ -75,10 +72,7 @@ mod database {
     use teloxide_core::types::UserId;
     use tokio::sync::Mutex;
 
-    use crate::{
-        event_handler::{course::DEFAULT_COURSE_GRAPH, progress_store::UserProgress},
-        interaction_types::deque::Deque,
-    };
+    use crate::{event_handler::progress_store::UserProgress, interaction_types::deque::Deque};
 
     #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
     pub struct CourseId(pub u64);
@@ -163,7 +157,7 @@ mod database {
             deque
                 .tasks
                 .keys()
-                .filter(|x| !DEFAULT_COURSE_GRAPH.cards().contains_key(*x))
+                .filter(|x| !CourseGraph::default().cards().contains_key(*x))
                 .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
                 .for_each(|item| {
                     errors.push(item);
@@ -287,8 +281,8 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             let mut courses = COURSES_STORAGE.lock().await;
             let id = courses.insert(Course {
                 owner_id: user.id,
-                structure: DEFAULT_COURSE_GRAPH.clone(),
-                tasks: DEFAULT_DEQUE.clone(),
+                structure: CourseGraph::default(),
+                tasks: Deque::default(),
             });
             bot.send_message(user.id, format!("Course created with id {}", id.0))
                 .await?;

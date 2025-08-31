@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 use dot_structures::{Graph, Node, Stmt};
 use graphviz_rust::attributes::NodeAttributes;
@@ -106,5 +106,14 @@ impl CourseGraph {
         self.cards.keys().for_each(|name| {
             self.propagate_no_fail(name, store);
         });
+    }
+}
+
+impl Default for CourseGraph {
+    fn default() -> Self {
+        CourseGraph::from_str(include_str!("../../../graph")).unwrap_or_else(|err| {
+            println!("{err}");
+            panic!("graph parsing error");
+        })
     }
 }
