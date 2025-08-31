@@ -1,10 +1,11 @@
-use std::{cmp::max, error::Error, sync::LazyLock};
+use std::{cmp::max, sync::LazyLock};
 
 use anyhow::Context;
 use course_graph::progress_store::TaskProgressStoreExt;
 use dashmap::DashMap;
 use graphviz_rust::{cmd::Format, printer::PrinterContext};
 use teloxide_core::{
+    RequestError,
     payloads::SendMessageSetters,
     prelude::*,
     types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, UpdateKind},
@@ -38,10 +39,10 @@ enum Event {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() {
     use handlers::*;
 
-    dotenvy::dotenv()?;
+    dotenvy::dotenv().expect("'TELOXIDE_TOKEN' variable should be specified in '.env' file");
     pretty_env_logger::init();
     let bot = Bot::from_env();
 
@@ -52,9 +53,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let updates = bot
             .get_updates()
             .offset((offset + 1).try_into().unwrap())
-            // .timeout(30) // FIXME: can't do this(as docs sad)
+            .timeout(30)
             .send()
-            .await?;
+            .await;
+        let updates = match updates {
+            Ok(x) => x,
+            Err(err) => match err {
+                RequestError::Network(error) if error.is_timeout() => {
+                    log::debug!("Telegram connection timed out.");
+                    continue;
+                }
+                other_error => {
+                    log::error!(
+                        "Error while connection to telegram to receive updates: {other_error}."
+                    );
+                    continue;
+                }
+            },
+        };
         for update in updates {
             offset = max(offset, update.id.0);
 
