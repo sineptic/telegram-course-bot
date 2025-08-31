@@ -9,7 +9,7 @@ use crate::{
 };
 
 static DEFAULT_COURSE_GRAPH: LazyLock<Immutable<CourseGraph>> = LazyLock::new(|| {
-    CourseGraph::from_str(&std::fs::read_to_string("graph").unwrap())
+    CourseGraph::from_str(include_str!("../../../../graph"))
         .unwrap_or_else(|err| {
             println!("{err}");
             panic!("graph parsing error");
@@ -18,7 +18,7 @@ static DEFAULT_COURSE_GRAPH: LazyLock<Immutable<CourseGraph>> = LazyLock::new(||
 });
 
 static DEFAULT_DEQUE: LazyLock<Immutable<Deque>> = LazyLock::new(|| {
-    let deque = deque::from_str(&std::fs::read_to_string("cards.md").unwrap(), true).unwrap();
+    let deque = deque::from_str(include_str!("../../../../cards.md"), true).unwrap();
     let mut errors = Vec::new();
     DEFAULT_COURSE_GRAPH
         .cards()

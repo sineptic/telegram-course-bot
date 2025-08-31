@@ -26,7 +26,6 @@ jobs:
     needs: check
     outputs:
       executable_id: ${{ steps.upload_executable.outputs.artifact-id }}
-      assets_id: ${{ steps.upload_assets.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
       - name: Use nightly version
@@ -40,19 +39,10 @@ jobs:
         with:
           name: linux-x86_64
           path: target/release/telegram-bot
-      - name: Upload assets
-        id: upload_assets
-        uses: actions/upload-artifact@v4.6.1
-        with:
-          name: assets
-          path: |
-            cards.md
-            graph
 
       - name: Output artifact IDs
         run: |
           echo 'Build artifact ID is ${{ steps.upload_executable.outputs.artifact-id }}'
-          echo 'Assets artifact ID is ${{ steps.upload_tasks.outputs.artifact-id }}'
 
   deploy:
     runs-on: ubuntu-latest
@@ -61,7 +51,5 @@ jobs:
     steps:
       - env:
           EXECUTABLE_ID: ${{needs.build.outputs.executable_id}}
-          TASKS_ID: ${{needs.build.outputs.assets_id}}
         run: |
           echo "Build artifact ID is $EXECUTABLE_ID"
-          echo "Assets artifact ID is $TASKS_ID"
