@@ -9,7 +9,7 @@ use teloxide_core::{
     RequestError,
     payloads::SendMessageSetters,
     prelude::*,
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, UpdateKind},
+    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, UpdateKind, User},
 };
 
 mod event_handler;
@@ -318,7 +318,23 @@ async fn main() {
             tokio::spawn(async move {
                 match update.kind {
                     UpdateKind::Message(message) => {
-                        handle_message(bot, message).await.log_err();
+                        let Some(ref user) = message.from else {
+                            log::warn!("Can't get user info from message {}", message.id);
+                            bot.send_message(message.chat.id, "Bot works only with users")
+                                .await
+                                .log_err();
+                            return;
+                        };
+                        let Some(text) = message.text() else {
+                            log::error!(
+                                "Message should contain text. This message is from user {user:?} and has id {}",
+                                message.id
+                            );
+                            return;
+                        };
+                        assert!(!text.is_empty());
+                        log::trace!("user {user:?} sends message '{text}'.");
+                        handle_message(bot, user, text).await.log_err();
                     }
                     UpdateKind::CallbackQuery(callback_query) => {
                         callback_handler(bot, callback_query).await.log_err();
@@ -330,7 +346,7 @@ async fn main() {
     }
 }
 
-async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
+async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<()> {
     static HELP_MESSAGE: &str = "
 /create_course - Create new course and get it's ID
 /card COURSE_ID CARD_NAME — Try to complete card
@@ -344,20 +360,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
 /view_course_errors COURSE_ID
 ";
 
-    let Some(ref user) = message.from else {
-        log::warn!("Can't get user info from message {}", message.id);
-        return Ok(());
-    };
-    let Some(text) = message.text() else {
-        log::error!(
-            "Message should contain text. This message is from user {user:?} and has id {}",
-            message.id
-        );
-        return Ok(());
-    };
-    assert!(!text.is_empty());
-    log::trace!("user {user:?} sends message '{text}'.");
-    let (first_word, tail) = text.trim().split_once(" ").unwrap_or((text, ""));
+    let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
     match first_word {
         "/help" => {
             log::info!(
@@ -365,7 +368,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            bot.send_message(message.chat.id, HELP_MESSAGE).await?;
+            bot.send_message(user.id, HELP_MESSAGE).await?;
         }
         "/start" => {
             log::info!(
@@ -374,10 +377,9 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 user.id
             );
             // TODO: onboarding
-            bot.send_message(message.chat.id, "TODO: onboarding")
-                .await?;
+            bot.send_message(user.id, "TODO: onboarding").await?;
 
-            bot.send_message(message.chat.id, HELP_MESSAGE).await?;
+            bot.send_message(user.id, HELP_MESSAGE).await?;
         }
         "/create_course" => {
             log::info!(
@@ -609,9 +611,9 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                     channel: _,
                 } => match &interactions[*current] {
                     TelegramInteraction::UserInput => {
-                        let user_input = message.text().unwrap().to_owned();
+                        let user_input = message.to_owned();
 
-                        bot.delete_message(message.chat.id, current_message.unwrap())
+                        bot.delete_message(user.id, current_message.unwrap())
                             .await
                             .log_err();
 
@@ -619,26 +621,17 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                         *current += 1;
                         *current_id = rand::random();
 
-                        progress_on_user_event(
-                            bot,
-                            message
-                                .from
-                                .ok_or(anyhow::anyhow!("Message should contain user id"))?
-                                .id,
-                            state,
-                        )
-                        .await
-                        .log_err()
-                        .unwrap();
+                        progress_on_user_event(bot, user.id, state)
+                            .await
+                            .log_err()
+                            .unwrap();
                     }
                     _ => {
-                        bot.send_message(message.chat.id, "Unexpected input")
-                            .await?;
+                        bot.send_message(user.id, "Unexpected input").await?;
                     }
                 },
                 State::Idle => {
-                    bot.send_message(message.chat.id, "Command not found!")
-                        .await?;
+                    bot.send_message(user.id, "Command not found!").await?;
                 }
             }
         }
