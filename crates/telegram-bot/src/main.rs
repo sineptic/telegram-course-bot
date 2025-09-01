@@ -72,12 +72,11 @@ mod database {
         collections::{BTreeMap, HashMap, btree_map::Entry},
         ops::{Deref, DerefMut},
         rc::Rc,
-        sync::{Arc, LazyLock},
+        sync::{Arc, LazyLock, Mutex, MutexGuard},
     };
 
     use course_graph::graph::CourseGraph;
     use teloxide_core::types::UserId;
-    use tokio::sync::{Mutex, MutexGuard};
 
     use crate::{event_handler::progress_store::UserProgress, interaction_types::deque::Deque};
 
@@ -93,50 +92,52 @@ mod database {
         inner: Mutex<Courses>,
     }
     impl CoursesWrapper {
-        async fn inner(&self) -> MutexGuard<'_, Courses> {
-            self.inner.lock().await
+        fn inner(&self) -> MutexGuard<'_, Courses> {
+            self.inner.lock().unwrap_or_else(|err| {
+                log::error!("Some thread panicked while holding mutex");
+                err.into_inner()
+            })
         }
-        pub async fn insert(&self, course: Course) -> CourseId {
-            self.inner().await.insert(course)
+        pub fn insert(&self, course: Course) -> CourseId {
+            self.inner().insert(course)
         }
-        pub async fn get_course(&self, cousre_id: CourseId) -> Option<Arc<Course>> {
-            self.inner().await.get_course(cousre_id)
+        pub fn get_course(&self, cousre_id: CourseId) -> Option<Arc<Course>> {
+            self.inner().get_course(cousre_id)
         }
         /// Returns whether course already exists.
-        pub async fn set_course(&self, course_id: CourseId, value: Course) -> bool {
-            self.inner().await.set_course(course_id, value)
+        pub fn set_course(&self, course_id: CourseId, value: Course) -> bool {
+            self.inner().set_course(course_id, value)
         }
-        pub async fn select_courses_by_owner(&self, owner: UserId) -> Option<Vec<Arc<Course>>> {
-            self.inner().await.select_courses_by_owner(owner)
+        pub fn select_courses_by_owner(&self, owner: UserId) -> Option<Vec<Arc<Course>>> {
+            self.inner().select_courses_by_owner(owner)
         }
-        pub async fn list_user_courses(&self, user_id: UserId) -> Option<Vec<CourseId>> {
-            self.inner().await.list_user_courses(user_id)
+        pub fn list_user_courses(&self, user_id: UserId) -> Option<Vec<CourseId>> {
+            self.inner().list_user_courses(user_id)
         }
         /// Returns None if there is no course with this id.
-        pub async fn get_progress(
+        pub fn get_progress(
             &self,
             user_id: UserId,
             course_id: CourseId,
         ) -> Option<Arc<UserProgress>> {
-            self.inner().await.get_progress(user_id, course_id)
+            self.inner().get_progress(user_id, course_id)
         }
         /// Returns false if course doesn't exists or already tracked to user
-        pub async fn add_course_to_user(&self, user_id: UserId, course_id: CourseId) -> bool {
-            self.inner().await.add_course_to_user(user_id, course_id)
+        pub fn add_course_to_user(&self, user_id: UserId, course_id: CourseId) -> bool {
+            self.inner().add_course_to_user(user_id, course_id)
         }
         /// Returns None if this progress doesn't exists.
-        pub async fn set_course_progress(
+        pub fn set_course_progress(
             &self,
             user_id: UserId,
             course_id: CourseId,
             progress: UserProgress,
         ) -> Option<()> {
             self.inner()
-                .await
                 .set_course_progress(user_id, course_id, progress)
         }
-        pub async fn delete_user_progress(&self, user_id: UserId) {
-            self.inner().await.delete_user_progress(user_id);
+        pub fn delete_user_progress(&self, user_id: UserId) {
+            self.inner().delete_user_progress(user_id);
         }
     }
     struct Courses {
@@ -384,13 +385,11 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            let id = STORAGE
-                .insert(Course {
-                    owner_id: user.id,
-                    structure: CourseGraph::default(),
-                    tasks: Deque::default(),
-                })
-                .await;
+            let id = STORAGE.insert(Course {
+                owner_id: user.id,
+                structure: CourseGraph::default(),
+                tasks: Deque::default(),
+            });
             bot.send_message(user.id, format!("Course created with id {}", id.0))
                 .await?;
         }
@@ -441,7 +440,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 return Ok(());
             };
 
-            let Some(course) = STORAGE.get_course(course_id).await else {
+            let Some(course) = STORAGE.get_course(course_id) else {
                 bot.send_message(
                     user.id,
                     format!("Course with id {} not found.", course_id.0),
@@ -453,7 +452,6 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
 
             STORAGE
                 .get_progress(user.id, course_id)
-                .await
                 .unwrap()
                 .generate_stmts()
                 .into_iter()
@@ -544,7 +542,6 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                         "```\n{}\n```",
                         STORAGE
                             .get_course(course_id)
-                            .await
                             .unwrap()
                             .structure
                             .get_source()
@@ -570,7 +567,6 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                         "```\n{}\n```",
                         STORAGE
                             .get_course(course_id)
-                            .await
                             .unwrap()
                             .tasks
                             .source
@@ -588,7 +584,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            if let Some(errors) = STORAGE.get_course(course_id).await.unwrap().get_errors() {
+            if let Some(errors) = STORAGE.get_course(course_id).unwrap().get_errors() {
                 let mut msgs = Vec::new();
                 msgs.push("Errors:".into());
                 for error in errors {

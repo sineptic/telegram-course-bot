@@ -85,7 +85,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                 return Ok(());
             }
             if matches!(
-                STORAGE.get_progress(user_id, course_id).await.unwrap()[&card_name],
+                STORAGE.get_progress(user_id, course_id).unwrap()[&card_name],
                 TaskProgress::NotStarted {
                     could_be_learned: false
                 }
@@ -101,11 +101,9 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
 
             if let Some(rcx) = handle_revise(&card_name, bot, user_id, course_id).await {
                 let mut progress =
-                    arc_deep_clone(STORAGE.get_progress(user_id, course_id).await.unwrap());
+                    arc_deep_clone(STORAGE.get_progress(user_id, course_id).unwrap());
                 progress.repetition(&card_name, rcx);
-                STORAGE
-                    .set_course_progress(user_id, course_id, progress)
-                    .await;
+                STORAGE.set_course_progress(user_id, course_id, progress);
             }
         }
         Event::PreviewCard {
@@ -128,13 +126,13 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             // }
         }
         Event::Clear { user_id } => {
-            STORAGE.delete_user_progress(user_id).await;
+            STORAGE.delete_user_progress(user_id);
 
             send_interactions(bot, user_id, vec!["Progress cleared.".into()]).await?;
         }
         Event::ChangeCourseGraph { user_id, course_id } => {
             let (source, printed_graph) = {
-                let Some(course) = STORAGE.get_course(course_id).await else {
+                let Some(course) = STORAGE.get_course(course_id) else {
                     bot.send_message(
                         user_id,
                         format!("Course with id {} not found.", course_id.0),
@@ -185,8 +183,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
 
                 match CourseGraph::from_str(answer) {
                     Ok(new_course_graph) => {
-                        let mut new_course =
-                            arc_deep_clone(STORAGE.get_course(course_id).await.unwrap());
+                        let mut new_course = arc_deep_clone(STORAGE.get_course(course_id).unwrap());
                         new_course.structure = new_course_graph;
                         send_interactions(bot, user_id, vec!["Course graph changed".into()])
                             .await?;
@@ -207,7 +204,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             }
         }
         Event::ChangeDeque { user_id, course_id } => {
-            let Some(course) = STORAGE.get_course(course_id).await else {
+            let Some(course) = STORAGE.get_course(course_id) else {
                 bot.send_message(
                     user_id,
                     format!("Course with id {} not found.", course_id.0),
@@ -244,7 +241,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                     Ok(new_deque) => {
                         let mut new_course = arc_deep_clone(course);
                         new_course.tasks = new_deque;
-                        STORAGE.set_course(course_id, new_course).await;
+                        STORAGE.set_course(course_id, new_course);
                         send_interactions(bot, user_id, vec!["Deque changed".into()]).await?;
                     }
                     Err(err) => {
@@ -273,7 +270,7 @@ fn arc_deep_clone<T: Clone>(arc: Arc<T>) -> T {
 
 #[must_use]
 pub async fn syncronize(user_id: UserId, course_id: CourseId) -> bool {
-    return STORAGE.get_progress(user_id, course_id).await.is_some();
+    return STORAGE.get_progress(user_id, course_id).is_some();
     todo!();
     // let mut user_progress = get_progress(course_id, user_id);
     // user_progress.syncronize(now().into());
@@ -295,7 +292,7 @@ async fn handle_revise(
         answer,
         explanation,
     } = {
-        let course = STORAGE.get_course(course_id).await.unwrap();
+        let course = STORAGE.get_course(course_id).unwrap();
         card::random_task(
             {
                 if let Some(x) = course.tasks.tasks.get(id) {
