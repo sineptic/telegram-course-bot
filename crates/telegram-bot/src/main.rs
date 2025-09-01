@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::{cmp::max, sync::LazyLock};
 
 use anyhow::Context;
@@ -366,7 +367,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 return Ok(());
             };
 
-            let courses = COURSES_STORAGE.lock().await;
+            let mut courses = COURSES_STORAGE.lock().await;
             let Some(course) = courses.get_course(course_id) else {
                 bot.send_message(
                     user.id,
@@ -377,9 +378,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             };
             let mut graph = course.structure.generate_structure_graph();
 
-            COURSES_STORAGE
-                .lock()
-                .await
+            courses
                 .get_progress(user.id, course_id)
                 .unwrap()
                 .generate_stmts()
