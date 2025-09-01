@@ -9,7 +9,7 @@ use teloxide_core::{
     RequestError,
     payloads::SendMessageSetters,
     prelude::*,
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, UpdateKind, User},
+    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, Update, UpdateKind, User},
 };
 
 mod event_handler;
@@ -22,7 +22,7 @@ use state::State;
 
 use crate::{
     event_handler::{handle_event, syncronize},
-    handlers::{progress_on_user_event, send_interactions},
+    handlers::{callback_handler, progress_on_user_event, send_interactions},
     interaction_types::{TelegramInteraction, deque::Deque},
     utils::ResultExt,
 };
@@ -315,35 +315,37 @@ async fn main() {
             offset = max(offset, update.id.0);
 
             let bot = bot.clone();
-            tokio::spawn(async move {
-                match update.kind {
-                    UpdateKind::Message(message) => {
-                        let Some(ref user) = message.from else {
-                            log::warn!("Can't get user info from message {}", message.id);
-                            bot.send_message(message.chat.id, "Bot works only with users")
-                                .await
-                                .log_err();
-                            return;
-                        };
-                        let Some(text) = message.text() else {
-                            log::error!(
-                                "Message should contain text. This message is from user {user:?} and has id {}",
-                                message.id
-                            );
-                            return;
-                        };
-                        assert!(!text.is_empty());
-                        log::trace!("user {user:?} sends message '{text}'.");
-                        handle_message(bot, user, text).await.log_err();
-                    }
-                    UpdateKind::CallbackQuery(callback_query) => {
-                        callback_handler(bot, callback_query).await.log_err();
-                    }
-                    _ => todo!(),
-                };
-            });
+            tokio::spawn(update_handler(bot, update));
         }
     }
+}
+
+async fn update_handler(bot: Bot, update: Update) {
+    match update.kind {
+        UpdateKind::Message(message) => {
+            let Some(ref user) = message.from else {
+                log::warn!("Can't get user info from message {}", message.id);
+                bot.send_message(message.chat.id, "Bot works only with users")
+                    .await
+                    .log_err();
+                return;
+            };
+            let Some(text) = message.text() else {
+                log::error!(
+                    "Message should contain text. This message is from user {user:?} and has id {}",
+                    message.id
+                );
+                return;
+            };
+            assert!(!text.is_empty());
+            log::trace!("user {user:?} sends message '{text}'.");
+            handle_message(bot, user, text).await.log_err();
+        }
+        UpdateKind::CallbackQuery(callback_query) => {
+            callback_handler(bot, callback_query).await.log_err();
+        }
+        _ => todo!(),
+    };
 }
 
 async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<()> {
