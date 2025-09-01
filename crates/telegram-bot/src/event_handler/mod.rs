@@ -8,7 +8,7 @@ use teloxide_core::{Bot, prelude::Requester, types::UserId};
 
 use super::Event;
 use crate::{
-    COURSES_STORAGE,
+    STORAGE,
     database::CourseId,
     handlers::{send_interactions, set_task_for_user},
     interaction_types::{telegram_interaction::QuestionElement, *},
@@ -81,7 +81,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                 return Ok(());
             }
             if matches!(
-                COURSES_STORAGE
+                STORAGE
                     .lock()
                     .await
                     .get_progress(user_id, course_id)
@@ -100,7 +100,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             }
 
             if let Some(rcx) = handle_revise(&card_name, bot, user_id, course_id).await {
-                COURSES_STORAGE
+                STORAGE
                     .lock()
                     .await
                     .get_progress(user_id, course_id)
@@ -128,13 +128,13 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             // }
         }
         Event::Clear { user_id } => {
-            COURSES_STORAGE.lock().await.delete_progress(user_id);
+            STORAGE.lock().await.delete_progress(user_id);
 
             send_interactions(bot, user_id, vec!["Progress cleared.".into()]).await?;
         }
         Event::ChangeCourseGraph { user_id, course_id } => {
             let (source, printed_graph) = {
-                let course = COURSES_STORAGE.lock().await;
+                let course = STORAGE.lock().await;
                 let Some(course) = course.get_course(course_id) else {
                     bot.send_message(
                         user_id,
@@ -186,12 +186,9 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
 
                 match CourseGraph::from_str(answer) {
                     Ok(new_course_graph) => {
-                        COURSES_STORAGE
-                            .lock()
-                            .await
-                            .get_course_mut(course_id)
-                            .unwrap()
-                            .structure = new_course_graph;
+                        let mut new_course =
+                            STORAGE.lock().await.get_course(course_id).unwrap().clone();
+                        new_course.structure = new_course_graph;
                         send_interactions(bot, user_id, vec!["Course graph changed".into()])
                             .await?;
                     }
@@ -211,7 +208,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             }
         }
         Event::ChangeDeque { user_id, course_id } => {
-            let courses = COURSES_STORAGE.lock().await;
+            let courses = STORAGE.lock().await;
             let Some(course) = courses.get_course(course_id) else {
                 bot.send_message(
                     user_id,
@@ -247,12 +244,9 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
 
                 match deque::from_str(answer, true) {
                     Ok(new_deque) => {
-                        COURSES_STORAGE
-                            .lock()
-                            .await
-                            .get_course_mut(course_id)
-                            .unwrap()
-                            .tasks = new_deque;
+                        let mut new_course = course.clone();
+                        new_course.tasks = new_deque;
+                        STORAGE.lock().await.set_course(course_id, new_course);
                         send_interactions(bot, user_id, vec!["Deque changed".into()]).await?;
                     }
                     Err(err) => {
@@ -275,7 +269,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
 
 #[must_use]
 pub async fn syncronize(user_id: UserId, course_id: CourseId) -> bool {
-    return COURSES_STORAGE
+    return STORAGE
         .lock()
         .await
         .get_progress(user_id, course_id)
@@ -301,7 +295,7 @@ async fn handle_revise(
         answer,
         explanation,
     } = {
-        let course = COURSES_STORAGE.lock().await;
+        let course = STORAGE.lock().await;
         let course = course.get_course(course_id).unwrap();
         card::random_task(
             {

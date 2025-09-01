@@ -59,7 +59,7 @@ enum Event {
 
 use database::*;
 mod database {
-    pub static COURSES_STORAGE: LazyLock<Mutex<Courses>> = LazyLock::new(|| {
+    pub static STORAGE: LazyLock<Mutex<Courses>> = LazyLock::new(|| {
         Mutex::new(Courses {
             next_course_id: 0,
             data: BTreeMap::new(),
@@ -108,8 +108,9 @@ mod database {
         pub fn get_course(&self, id: CourseId) -> Option<&Course> {
             self.data.get(&id)
         }
-        pub fn get_course_mut(&mut self, id: CourseId) -> Option<&mut Course> {
-            self.data.get_mut(&id)
+        /// Returns whether course already exists.
+        pub fn set_course(&mut self, id: CourseId, content: Course) -> bool {
+            self.data.insert(id, content).is_some()
         }
         pub fn select_courses_by_owner(&self, owner: UserId) -> Option<Vec<&Course>> {
             self.owners_index.get(&owner).map(|course_ids| {
@@ -311,7 +312,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            let mut courses = COURSES_STORAGE.lock().await;
+            let mut courses = STORAGE.lock().await;
             let id = courses.insert(Course {
                 owner_id: user.id,
                 structure: CourseGraph::default(),
@@ -367,7 +368,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 return Ok(());
             };
 
-            let mut courses = COURSES_STORAGE.lock().await;
+            let mut courses = STORAGE.lock().await;
             let Some(course) = courses.get_course(course_id) else {
                 bot.send_message(
                     user.id,
@@ -468,7 +469,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                     "Course graph source:".into(),
                     format!(
                         "```\n{}\n```",
-                        COURSES_STORAGE
+                        STORAGE
                             .lock()
                             .await
                             .get_course(course_id)
@@ -495,7 +496,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                     "Deque source:".into(),
                     format!(
                         "```\n{}\n```",
-                        COURSES_STORAGE
+                        STORAGE
                             .lock()
                             .await
                             .get_course(course_id)
@@ -516,7 +517,7 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            if let Some(errors) = COURSES_STORAGE
+            if let Some(errors) = STORAGE
                 .lock()
                 .await
                 .get_course(course_id)
