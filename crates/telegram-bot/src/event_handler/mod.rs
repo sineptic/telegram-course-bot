@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, str::FromStr, sync::LazyLock};
+use std::{
+    collections::BTreeMap,
+    str::FromStr,
+    sync::{Arc, LazyLock},
+};
 
 use anyhow::Context;
 use chrono::{DateTime, Local};
@@ -100,12 +104,18 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             }
 
             if let Some(rcx) = handle_revise(&card_name, bot, user_id, course_id).await {
+                let mut progress = arc_deep_clone(
+                    STORAGE
+                        .lock()
+                        .await
+                        .get_progress(user_id, course_id)
+                        .unwrap(),
+                );
+                progress.repetition(&card_name, rcx);
                 STORAGE
                     .lock()
                     .await
-                    .get_progress(user_id, course_id)
-                    .unwrap()
-                    .repetition(&card_name, rcx);
+                    .set_course_progress(user_id, course_id, progress);
             }
         }
         Event::PreviewCard {
@@ -128,7 +138,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             // }
         }
         Event::Clear { user_id } => {
-            STORAGE.lock().await.delete_progress(user_id);
+            STORAGE.lock().await.delete_user_progress(user_id);
 
             send_interactions(bot, user_id, vec!["Progress cleared.".into()]).await?;
         }
@@ -187,7 +197,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                 match CourseGraph::from_str(answer) {
                     Ok(new_course_graph) => {
                         let mut new_course =
-                            STORAGE.lock().await.get_course(course_id).unwrap().clone();
+                            arc_deep_clone(STORAGE.lock().await.get_course(course_id).unwrap());
                         new_course.structure = new_course_graph;
                         send_interactions(bot, user_id, vec!["Course graph changed".into()])
                             .await?;
@@ -244,7 +254,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
 
                 match deque::from_str(answer, true) {
                     Ok(new_deque) => {
-                        let mut new_course = course.clone();
+                        let mut new_course = arc_deep_clone(course);
                         new_course.tasks = new_deque;
                         STORAGE.lock().await.set_course(course_id, new_course);
                         send_interactions(bot, user_id, vec!["Deque changed".into()]).await?;
@@ -265,6 +275,12 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+fn arc_deep_clone<T: Clone>(arc: Arc<T>) -> T {
+    let mut new_value = arc.clone();
+    Arc::make_mut(&mut new_value);
+    Arc::into_inner(new_value).unwrap()
 }
 
 #[must_use]
@@ -295,8 +311,7 @@ async fn handle_revise(
         answer,
         explanation,
     } = {
-        let course = STORAGE.lock().await;
-        let course = course.get_course(course_id).unwrap();
+        let course = STORAGE.lock().await.get_course(course_id).unwrap();
         card::random_task(
             {
                 if let Some(x) = course.tasks.tasks.get(id) {

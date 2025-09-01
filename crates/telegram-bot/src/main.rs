@@ -62,16 +62,17 @@ mod database {
     pub static STORAGE: LazyLock<Mutex<Courses>> = LazyLock::new(|| {
         Mutex::new(Courses {
             next_course_id: 0,
-            data: BTreeMap::new(),
-            owners_index: BTreeMap::new(),
+            courses: BTreeMap::new(),
+            courses_owners_index: BTreeMap::new(),
             progress: HashMap::new(),
         })
     });
 
     use std::{
-        collections::{BTreeMap, HashMap},
-        ops::DerefMut,
-        sync::LazyLock,
+        collections::{BTreeMap, HashMap, btree_map::Entry},
+        ops::{Deref, DerefMut},
+        rc::Rc,
+        sync::{Arc, LazyLock},
     };
 
     use course_graph::graph::CourseGraph;
@@ -90,33 +91,33 @@ mod database {
     }
     pub struct Courses {
         next_course_id: u64,
-        data: BTreeMap<CourseId, Course>,
-        owners_index: BTreeMap<UserId, Vec<CourseId>>,
-        progress: HashMap<UserId, BTreeMap<CourseId, UserProgress>>,
+        courses: BTreeMap<CourseId, Arc<Course>>,
+        courses_owners_index: BTreeMap<UserId, Vec<CourseId>>,
+        progress: HashMap<UserId, BTreeMap<CourseId, Arc<UserProgress>>>,
     }
     impl Courses {
         pub fn insert(&mut self, course: Course) -> CourseId {
             let course_id = CourseId(self.next_course_id);
             self.next_course_id += 1;
-            self.owners_index
+            self.courses_owners_index
                 .entry(course.owner_id)
                 .or_default()
                 .push(course_id);
-            self.data.insert(course_id, course);
+            self.courses.insert(course_id, course.into());
             course_id
         }
-        pub fn get_course(&self, id: CourseId) -> Option<&Course> {
-            self.data.get(&id)
+        pub fn get_course(&self, id: CourseId) -> Option<Arc<Course>> {
+            self.courses.get(&id).cloned()
         }
         /// Returns whether course already exists.
         pub fn set_course(&mut self, id: CourseId, content: Course) -> bool {
-            self.data.insert(id, content).is_some()
+            self.courses.insert(id, content.into()).is_some()
         }
-        pub fn select_courses_by_owner(&self, owner: UserId) -> Option<Vec<&Course>> {
-            self.owners_index.get(&owner).map(|course_ids| {
+        pub fn select_courses_by_owner(&self, owner: UserId) -> Option<Vec<Arc<Course>>> {
+            self.courses_owners_index.get(&owner).map(|course_ids| {
                 course_ids
                     .iter()
-                    .map(|course_id| self.data.get(course_id).unwrap())
+                    .map(|course_id| self.courses.get(course_id).unwrap().clone())
                     .collect::<Vec<_>>()
             })
         }
@@ -130,17 +131,42 @@ mod database {
             &mut self,
             user: UserId,
             course: CourseId,
-        ) -> Option<impl DerefMut<Target = UserProgress>> {
+        ) -> Option<Arc<UserProgress>> {
             let def = self.get_course(course)?.default_user_progress();
             Some(
                 self.progress
                     .entry(user)
                     .or_default()
                     .entry(course)
-                    .or_insert(def),
+                    .or_insert(def.into())
+                    .clone(),
             )
         }
-        pub fn delete_progress(&mut self, user: UserId) {
+        /// Returns false if course doesn't exists or already tracked to user
+        pub fn add_course_to_user(&mut self, user_id: UserId, course_id: CourseId) -> bool {
+            let Some(course) = self.get_course(course_id) else {
+                return false;
+            };
+            let entry = self.progress.entry(user_id).or_default().entry(course_id);
+            match entry {
+                Entry::Vacant(vacant_entry) => {
+                    vacant_entry.insert(Arc::new(course.default_user_progress()));
+                    true
+                }
+                Entry::Occupied(occupied_entry) => false,
+            }
+        }
+        /// Returns None if this progress doesn't exists.
+        pub fn set_course_progress(
+            &mut self,
+            user_id: UserId,
+            course_id: CourseId,
+            progress: UserProgress,
+        ) -> Option<()> {
+            *self.progress.get_mut(&user_id)?.get_mut(&course_id)? = Arc::new(progress);
+            Some(())
+        }
+        pub fn delete_user_progress(&mut self, user: UserId) {
             self.progress.remove(&user);
         }
     }
