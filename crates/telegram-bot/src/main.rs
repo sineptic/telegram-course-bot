@@ -20,7 +20,7 @@ mod utils;
 use state::State;
 
 use crate::{
-    event_handler::{get_progress, handle_event, syncronize},
+    event_handler::{handle_event, syncronize},
     handlers::{progress_on_user_event, send_interactions},
     interaction_types::{TelegramInteraction, deque::Deque},
     utils::ResultExt,
@@ -63,10 +63,15 @@ mod database {
             next_course_id: 0,
             data: BTreeMap::new(),
             owners_index: BTreeMap::new(),
+            progress: HashMap::new(),
         })
     });
 
-    use std::{collections::BTreeMap, sync::LazyLock};
+    use std::{
+        collections::{BTreeMap, HashMap},
+        ops::DerefMut,
+        sync::LazyLock,
+    };
 
     use course_graph::graph::CourseGraph;
     use teloxide_core::types::UserId;
@@ -86,6 +91,7 @@ mod database {
         next_course_id: u64,
         data: BTreeMap<CourseId, Course>,
         owners_index: BTreeMap<UserId, Vec<CourseId>>,
+        progress: HashMap<UserId, BTreeMap<CourseId, UserProgress>>,
     }
     impl Courses {
         pub fn insert(&mut self, course: Course) -> CourseId {
@@ -112,29 +118,54 @@ mod database {
                     .collect::<Vec<_>>()
             })
         }
+        pub fn list_user_courses(&self, user: UserId) -> Option<Vec<CourseId>> {
+            self.progress
+                .get(&user)
+                .map(|list| list.keys().copied().collect())
+        }
+        /// Returns None if there is no course with this id.
+        pub fn get_progress(
+            &mut self,
+            user: UserId,
+            course: CourseId,
+        ) -> Option<impl DerefMut<Target = UserProgress>> {
+            let def = self.get_course(course)?.default_user_progress();
+            Some(
+                self.progress
+                    .entry(user)
+                    .or_default()
+                    .entry(course)
+                    .or_insert(def),
+            )
+        }
+        pub fn delete_progress(&mut self, user: UserId) {
+            self.progress.remove(&user);
+        }
     }
     impl Courses {
         pub fn partial_serialize(&self) -> (u64, Vec<(CourseId, Course)>) {
-            (
-                self.next_course_id,
-                self.data
-                    .iter()
-                    .map(|(id, value)| (*id, value.clone()))
-                    .collect::<Vec<_>>(),
-            )
+            todo!()
+            // (
+            //     self.next_course_id,
+            //     self.data
+            //         .iter()
+            //         .map(|(id, value)| (*id, value.clone()))
+            //         .collect::<Vec<_>>(),
+            // )
         }
         pub fn partial_deserialize(next_course_id: u64, courses: Vec<(CourseId, Course)>) -> Self {
-            let mut owners_index: BTreeMap<UserId, Vec<CourseId>> = BTreeMap::new();
-            let mut data = BTreeMap::new();
-            for (id, course) in courses {
-                owners_index.entry(course.owner_id).or_default().push(id);
-                assert!(data.insert(id, course).is_none());
-            }
-            Self {
-                next_course_id,
-                owners_index,
-                data,
-            }
+            todo!()
+            // let mut owners_index: BTreeMap<UserId, Vec<CourseId>> = BTreeMap::new();
+            // let mut data = BTreeMap::new();
+            // for (id, course) in courses {
+            //     owners_index.entry(course.owner_id).or_default().push(id);
+            //     assert!(data.insert(id, course).is_none());
+            // }
+            // Self {
+            //     next_course_id,
+            //     owners_index,
+            //     data,
+            // }
         }
     }
     impl Course {
@@ -346,8 +377,10 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
             };
             let mut graph = course.structure.generate_structure_graph();
 
-            get_progress(course_id, user.id)
+            COURSES_STORAGE
+                .lock()
                 .await
+                .get_progress(user.id, course_id)
                 .unwrap()
                 .generate_stmts()
                 .into_iter()

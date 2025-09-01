@@ -1,17 +1,10 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    ops::DerefMut,
-    str::FromStr,
-    sync::LazyLock,
-};
+use std::{collections::BTreeMap, str::FromStr, sync::LazyLock};
 
 use anyhow::Context;
 use chrono::{DateTime, Local};
 use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
-use progress_store::UserProgress;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide_core::{Bot, prelude::Requester, types::UserId};
-use tokio::sync::{Mutex, MutexGuard};
 
 use super::Event;
 use crate::{
@@ -23,26 +16,6 @@ use crate::{
 };
 
 pub mod progress_store;
-
-static PROGRESS_STORE: LazyLock<Mutex<HashMap<UserId, BTreeMap<CourseId, UserProgress>>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
-pub async fn get_progress(
-    course_id: CourseId,
-    user_id: UserId,
-) -> Option<impl DerefMut<Target = UserProgress>> {
-    let def = crate::COURSES_STORAGE
-        .lock()
-        .await
-        .get_course(course_id)?
-        .default_user_progress();
-    Some(MutexGuard::map(PROGRESS_STORE.lock().await, |store| {
-        store
-            .entry(user_id)
-            .or_default()
-            .entry(course_id)
-            .or_insert(def)
-    }))
-}
 
 async fn get_user_answer(
     bot: Bot,
@@ -108,7 +81,11 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                 return Ok(());
             }
             if matches!(
-                get_progress(course_id, user_id).await.unwrap()[&card_name],
+                COURSES_STORAGE
+                    .lock()
+                    .await
+                    .get_progress(user_id, course_id)
+                    .unwrap()[&card_name],
                 TaskProgress::NotStarted {
                     could_be_learned: false
                 }
@@ -123,8 +100,10 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             }
 
             if let Some(rcx) = handle_revise(&card_name, bot, user_id, course_id).await {
-                get_progress(course_id, user_id)
+                COURSES_STORAGE
+                    .lock()
                     .await
+                    .get_progress(user_id, course_id)
                     .unwrap()
                     .repetition(&card_name, rcx);
             }
@@ -149,7 +128,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             // }
         }
         Event::Clear { user_id } => {
-            PROGRESS_STORE.lock().await.insert(user_id, BTreeMap::new());
+            COURSES_STORAGE.lock().await.delete_progress(user_id);
 
             send_interactions(bot, user_id, vec!["Progress cleared.".into()]).await?;
         }
@@ -296,7 +275,11 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
 
 #[must_use]
 pub async fn syncronize(user_id: UserId, course_id: CourseId) -> bool {
-    return get_progress(course_id, user_id).await.is_some();
+    return COURSES_STORAGE
+        .lock()
+        .await
+        .get_progress(user_id, course_id)
+        .is_some();
     todo!();
     // let mut user_progress = get_progress(course_id, user_id);
     // user_progress.syncronize(now().into());
