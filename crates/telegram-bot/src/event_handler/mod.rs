@@ -29,20 +29,19 @@ static PROGRESS_STORE: LazyLock<Mutex<HashMap<UserId, BTreeMap<CourseId, UserPro
 pub async fn get_progress(
     course_id: CourseId,
     user_id: UserId,
-) -> impl DerefMut<Target = UserProgress> {
+) -> Option<impl DerefMut<Target = UserProgress>> {
     let def = crate::COURSES_STORAGE
         .lock()
         .await
-        .get_course(course_id)
-        .unwrap()
+        .get_course(course_id)?
         .default_user_progress();
-    MutexGuard::map(PROGRESS_STORE.lock().await, |store| {
+    Some(MutexGuard::map(PROGRESS_STORE.lock().await, |store| {
         store
             .entry(user_id)
             .or_default()
             .entry(course_id)
             .or_insert(def)
-    })
+    }))
 }
 
 async fn get_user_answer(
@@ -100,9 +99,16 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             course_id,
             card_name,
         } => {
-            syncronize(user_id, course_id);
+            if !syncronize(user_id, course_id).await {
+                bot.send_message(
+                    user_id,
+                    format!("Course with id {} not found.", course_id.0),
+                )
+                .await?;
+                return Ok(());
+            }
             if matches!(
-                get_progress(course_id, user_id).await[&card_name],
+                get_progress(course_id, user_id).await.unwrap()[&card_name],
                 TaskProgress::NotStarted {
                     could_be_learned: false
                 }
@@ -119,6 +125,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             if let Some(rcx) = handle_revise(&card_name, bot, user_id, course_id).await {
                 get_progress(course_id, user_id)
                     .await
+                    .unwrap()
                     .repetition(&card_name, rcx);
             }
         }
@@ -149,10 +156,17 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
         Event::ChangeCourseGraph { user_id, course_id } => {
             let (source, printed_graph) = {
                 let course = COURSES_STORAGE.lock().await;
-                let course = course.get_course(course_id).unwrap();
+                let Some(course) = course.get_course(course_id) else {
+                    bot.send_message(
+                        user_id,
+                        format!("Course with id {} not found.", course_id.0),
+                    )
+                    .await?;
+                    return Ok(());
+                };
                 if course.owner_id != user_id {
                     bot.send_message(user_id, "It's not your course.").await?;
-                    todo!();
+                    return Ok(());
                 }
                 let course_graph = &course.structure;
                 let source = course_graph.get_source().to_owned();
@@ -219,10 +233,17 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
         }
         Event::ChangeDeque { user_id, course_id } => {
             let courses = COURSES_STORAGE.lock().await;
-            let course = courses.get_course(course_id).unwrap();
+            let Some(course) = courses.get_course(course_id) else {
+                bot.send_message(
+                    user_id,
+                    format!("Course with id {} not found.", course_id.0),
+                )
+                .await?;
+                return Ok(());
+            };
             if course.owner_id != user_id {
                 bot.send_message(user_id, "It's not your course.").await?;
-                todo!();
+                return Ok(());
             }
             let source = course.tasks.source.clone();
 
@@ -273,8 +294,9 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn syncronize(user_id: UserId, course_id: CourseId) {
-    return;
+#[must_use]
+pub async fn syncronize(user_id: UserId, course_id: CourseId) -> bool {
+    return get_progress(course_id, user_id).await.is_some();
     todo!();
     // let mut user_progress = get_progress(course_id, user_id);
     // user_progress.syncronize(now().into());

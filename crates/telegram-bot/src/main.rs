@@ -326,18 +326,29 @@ async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            syncronize(user.id, course_id);
+            if !syncronize(user.id, course_id).await {
+                bot.send_message(
+                    user.id,
+                    format!("Course with id {} not found.", course_id.0),
+                )
+                .await?;
+                return Ok(());
+            };
 
-            let mut graph = COURSES_STORAGE
-                .lock()
-                .await
-                .get_course(course_id)
-                .unwrap()
-                .structure
-                .generate_structure_graph();
+            let courses = COURSES_STORAGE.lock().await;
+            let Some(course) = courses.get_course(course_id) else {
+                bot.send_message(
+                    user.id,
+                    format!("Course with id {} not found.", course_id.0),
+                )
+                .await?;
+                return Ok(());
+            };
+            let mut graph = course.structure.generate_structure_graph();
 
             get_progress(course_id, user.id)
                 .await
+                .unwrap()
                 .generate_stmts()
                 .into_iter()
                 .for_each(|stmt| {
