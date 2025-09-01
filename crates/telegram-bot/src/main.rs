@@ -226,7 +226,7 @@ async fn main() {
             Ok(x) => x,
             Err(err) => match err {
                 RequestError::Network(error) if error.is_timeout() => {
-                    log::debug!("Telegram connection timed out.");
+                    log::trace!("Telegram connection timed out.");
                     continue;
                 }
                 other_error => {
@@ -259,7 +259,7 @@ async fn main() {
 async fn handle_message(bot: Bot, message: Message) -> anyhow::Result<()> {
     static HELP_MESSAGE: &str = "
 /create_course - Create new course and get it's ID
-/card CARD_NAME COURSE_ID — Try to complete card
+/card COURSE_ID CARD_NAME — Try to complete card
 /graph COURSE_ID— View course structure
 /help — Display all commands
 /clear — Reset your state to default(clear all progress)
