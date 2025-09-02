@@ -335,18 +335,44 @@ async fn update_handler(bot: Bot, update: Update, users_state: &DashMap<UserId, 
     };
 }
 
+async fn send_help_message(
+    bot: Bot,
+    user: &User,
+    mut user_state: MutUserState<'_, '_>,
+) -> anyhow::Result<()> {
+    let main_menu_help_message = "
+/help - Display all commands
+/create_course - Create new course and get it's ID
+/course COURSE_ID - Go to courses menu
+";
+    let course_help_message = "
+/card CARD_NAME — Try to complete card
+/graph — View course structure
+/help — Display all commands
+/clear — Reset your state to default(clear all progress)
+/change_course_graph
+/change_deque
+/view_course_graph_source
+/view_deque_source
+/view_course_errors
+";
+    bot.send_message(
+        user.id,
+        match user_state.current_screen {
+            Screen::Main => main_menu_help_message,
+            Screen::Course(_course_id) => course_help_message,
+        },
+    )
+    .await?;
+    Ok(())
+}
+
 async fn handle_main_menu_interaction(
     bot: Bot,
     user: &User,
     message: &str,
     mut user_state: MutUserState<'_, '_>,
 ) -> anyhow::Result<()> {
-    static HELP_MESSAGE: &str = "
-/help - Display all commands
-/create_course - Create new course and get it's ID
-/course COURSE_ID - Go to courses menu
-";
-
     let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
     match first_word {
         "/help" => {
@@ -355,7 +381,7 @@ async fn handle_main_menu_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            bot.send_message(user.id, HELP_MESSAGE).await?;
+            send_help_message(bot, user, user_state).await?;
         }
         "/start" => {
             log::info!(
@@ -366,7 +392,7 @@ async fn handle_main_menu_interaction(
             // TODO: onboarding
             bot.send_message(user.id, "TODO: onboarding").await?;
 
-            bot.send_message(user.id, HELP_MESSAGE).await?;
+            send_help_message(bot, user, user_state).await?;
         }
         "/create_course" => {
             log::info!(
@@ -391,6 +417,9 @@ async fn handle_main_menu_interaction(
             let course_id = CourseId(tail.parse().unwrap());
             // FIXME: check course existance
             user_state.current_screen = Screen::Course(course_id);
+            bot.send_message(user.id, "You are now in courses menu.")
+                .await?;
+            send_help_message(bot, user, user_state).await?;
         }
         _ => todo!(),
     }
@@ -404,18 +433,6 @@ async fn handle_course_interaction(
     course_id: CourseId,
     mut user_state: MutUserState<'_, '_>,
 ) -> anyhow::Result<()> {
-    static HELP_MESSAGE: &str = "
-/card CARD_NAME — Try to complete card
-/graph — View course structure
-/help — Display all commands
-/clear — Reset your state to default(clear all progress)
-/change_course_graph
-/change_deque
-/view_course_graph_source
-/view_deque_source
-/view_course_errors
-";
-
     let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
     match first_word {
         "/help" => {
@@ -424,7 +441,7 @@ async fn handle_course_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            bot.send_message(user.id, HELP_MESSAGE).await?;
+            send_help_message(bot, user, user_state).await?;
         }
         "/card" => {
             if tail.contains(" ") {
