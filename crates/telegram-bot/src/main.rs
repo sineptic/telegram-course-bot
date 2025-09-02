@@ -18,15 +18,14 @@ mod interaction_types;
 mod state;
 mod utils;
 
-use state::State;
-
 use crate::{
     event_handler::{handle_event, syncronize},
     handlers::{callback_handler, progress_on_user_event, send_interactions},
     interaction_types::{TelegramInteraction, deque::Deque},
+    state::{UserInteraction, UserState},
     utils::ResultExt,
 };
-static STATE: LazyLock<DashMap<UserId, State>> = LazyLock::new(DashMap::new);
+static STATE: LazyLock<DashMap<UserId, UserState>> = LazyLock::new(DashMap::new);
 
 #[derive(Clone, Debug)]
 #[allow(unused)]
@@ -601,17 +600,16 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
         }
         // dialogue handling
         _ => {
-            let mut state = STATE.entry(user.id).or_default();
-            let state = state.value_mut();
-            match state {
-                State::UserEvent {
+            let mut user_state = STATE.entry(user.id).or_default();
+            match &mut user_state.current_interaction {
+                Some(UserInteraction {
                     interactions,
                     current,
                     current_id,
                     current_message,
                     answers,
                     channel: _,
-                } => match &interactions[*current] {
+                }) => match &interactions[*current] {
                     TelegramInteraction::UserInput => {
                         let user_input = message.to_owned();
 
@@ -623,7 +621,7 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
                         *current += 1;
                         *current_id = rand::random();
 
-                        progress_on_user_event(bot, user.id, state)
+                        progress_on_user_event(bot, user.id, &mut user_state.current_interaction)
                             .await
                             .log_err()
                             .unwrap();
@@ -632,7 +630,7 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
                         bot.send_message(user.id, "Unexpected input").await?;
                     }
                 },
-                State::Idle => {
+                None => {
                     bot.send_message(user.id, "Command not found!").await?;
                 }
             }

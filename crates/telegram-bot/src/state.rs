@@ -1,18 +1,26 @@
 use teloxide_core::types::MessageId;
 use tokio::sync::oneshot;
 
-use crate::interaction_types::TelegramInteraction;
+use crate::{database::CourseId, interaction_types::TelegramInteraction};
 
 #[derive(Default)]
-pub enum State {
+pub struct UserState {
+    pub current_screen: Screen,
+    pub current_interaction: Option<UserInteraction>,
+}
+
+#[derive(Default)]
+pub enum Screen {
     #[default]
-    Idle,
-    UserEvent {
-        interactions: Vec<TelegramInteraction>,
-        current: usize,
-        current_id: u64,
-        current_message: Option<MessageId>,
-        answers: Vec<String>,
-        channel: Option<oneshot::Sender<Vec<String>>>,
-    },
+    Main,
+    Course(CourseId),
+}
+
+pub struct UserInteraction {
+    pub interactions: Vec<TelegramInteraction>,
+    pub current: usize,
+    pub current_id: u64,
+    pub current_message: Option<MessageId>,
+    pub answers: Vec<String>,
+    pub channel: Option<oneshot::Sender<Vec<String>>>,
 }

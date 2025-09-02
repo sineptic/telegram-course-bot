@@ -2,8 +2,8 @@ use rand::seq::SliceRandom;
 use teloxide_core::types::{CallbackQuery, InputFile, ParseMode};
 use tokio::sync::oneshot;
 
-use super::{state::State, *};
-use crate::interaction_types::TelegramInteraction;
+use super::*;
+use crate::{interaction_types::TelegramInteraction, state::UserInteraction};
 
 pub async fn send_interactions(
     bot: Bot,
@@ -23,18 +23,18 @@ pub async fn set_task_for_user(
     interactions: Vec<TelegramInteraction>,
     channel: oneshot::Sender<Vec<String>>,
 ) -> anyhow::Result<()> {
-    let mut state = STATE.entry(user_id).or_default();
+    let mut user_state = STATE.entry(user_id).or_default();
 
-    *state = State::UserEvent {
+    user_state.current_interaction = Some(UserInteraction {
         interactions,
         current: 0,
         current_id: rand::random(),
         current_message: None,
         answers: Vec::new(),
         channel: Some(channel),
-    };
+    });
 
-    progress_on_user_event(bot, user_id, state.value_mut()).await?;
+    progress_on_user_event(bot, user_id, &mut user_state.current_interaction).await?;
     Ok(())
 }
 
@@ -51,18 +51,17 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> anyhow::Result<()> 
 
     let _ = bot.answer_callback_query(q.id).await;
 
-    let Some(mut state) = STATE.get_mut(&user_id) else {
+    let Some(mut user_state) = STATE.get_mut(&user_id) else {
         log::debug!("user {user_id} not in dialogue");
         return Ok(());
     };
-    let state = state.value_mut();
-    let State::UserEvent {
+    let Some(UserInteraction {
         current,
         current_id,
         current_message,
         answers,
         ..
-    } = state
+    }) = &mut user_state.current_interaction
     else {
         log::warn!("user {:?} in different state", q.from);
         bot.send_message(user_id, "You can answer only to current question")
@@ -92,7 +91,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> anyhow::Result<()> 
     answers.push(response.to_owned());
     *current += 1;
 
-    progress_on_user_event(bot, user_id, state).await?;
+    progress_on_user_event(bot, user_id, &mut user_state.current_interaction).await?;
 
     Ok(())
 }
@@ -100,16 +99,16 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> anyhow::Result<()> 
 pub async fn progress_on_user_event(
     bot: Bot,
     user_id: UserId,
-    state: &mut State,
+    current_user_interaction: &mut Option<UserInteraction>,
 ) -> anyhow::Result<()> {
-    let State::UserEvent {
+    let Some(UserInteraction {
         interactions,
         current,
         current_id,
         current_message,
         answers,
         channel,
-    } = state
+    }) = current_user_interaction
     else {
         log::error!("unexpected idle state");
         panic!("Unexpected state");
@@ -117,7 +116,7 @@ pub async fn progress_on_user_event(
     loop {
         if *current >= interactions.len() {
             channel.take().unwrap().send(answers.clone()).unwrap();
-            *state = State::Idle;
+            *current_user_interaction = None;
             break;
         }
         match &interactions[*current] {
