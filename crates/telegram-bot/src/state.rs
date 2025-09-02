@@ -1,4 +1,5 @@
-use teloxide_core::types::MessageId;
+use dashmap::mapref::one::RefMut;
+use teloxide_core::types::{MessageId, UserId};
 use tokio::sync::oneshot;
 
 use crate::{database::CourseId, interaction_types::TelegramInteraction};
@@ -8,6 +9,8 @@ pub struct UserState {
     pub current_screen: Screen,
     pub current_interaction: Option<UserInteraction>,
 }
+
+pub type MutUserState<'a, 'b> = &'a mut RefMut<'b, UserId, UserState>;
 
 #[derive(Default)]
 pub enum Screen {

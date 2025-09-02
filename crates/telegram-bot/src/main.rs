@@ -22,10 +22,9 @@ use crate::{
     event_handler::{handle_event, syncronize},
     handlers::{callback_handler, progress_on_user_event, send_interactions},
     interaction_types::{TelegramInteraction, deque::Deque},
-    state::{Screen, UserInteraction, UserState},
+    state::*,
     utils::ResultExt,
 };
-static STATE: LazyLock<DashMap<UserId, UserState>> = LazyLock::new(DashMap::new);
 
 #[derive(Clone, Debug)]
 #[allow(unused)]
@@ -258,6 +257,7 @@ async fn main() {
     dotenvy::dotenv().expect("'TELOXIDE_TOKEN' variable should be specified in '.env' file");
     pretty_env_logger::init();
     let bot = Bot::from_env();
+    let users_state: &DashMap<UserId, UserState> = Box::leak(Box::new(DashMap::new()));
 
     log::info!("Bot started");
 
@@ -288,12 +288,12 @@ async fn main() {
             offset = max(offset, update.id.0);
 
             let bot = bot.clone();
-            tokio::spawn(update_handler(bot, update));
+            tokio::spawn(update_handler(bot, update, users_state));
         }
     }
 }
 
-async fn update_handler(bot: Bot, update: Update) {
+async fn update_handler(bot: Bot, update: Update, users_state: &DashMap<UserId, UserState>) {
     match update.kind {
         UpdateKind::Message(message) => {
             let Some(ref user) = message.from else {
@@ -312,30 +312,35 @@ async fn update_handler(bot: Bot, update: Update) {
             };
             assert!(!text.is_empty());
             log::trace!("user {user:?} sends message '{text}'.");
-            let mut user_state = STATE.entry(user.id).or_default();
+            let mut user_state = users_state.entry(user.id).or_default();
             match user_state.current_screen {
                 Screen::Main => {
-                    drop(user_state);
-                    handle_main_menu_interaction(bot, user, text)
+                    handle_main_menu_interaction(bot, user, text, &mut user_state)
                         .await
                         .log_err();
                 }
                 Screen::Course(course_id) => {
-                    drop(user_state);
-                    handle_course_interaction(bot, user, text, course_id)
+                    handle_course_interaction(bot, user, text, course_id, &mut user_state)
                         .await
                         .log_err();
                 }
             }
         }
         UpdateKind::CallbackQuery(callback_query) => {
-            callback_handler(bot, callback_query).await.log_err();
+            callback_handler(bot, callback_query, users_state)
+                .await
+                .log_err();
         }
         _ => todo!(),
     };
 }
 
-async fn handle_main_menu_interaction(bot: Bot, user: &User, message: &str) -> anyhow::Result<()> {
+async fn handle_main_menu_interaction(
+    bot: Bot,
+    user: &User,
+    message: &str,
+    mut user_state: MutUserState<'_, '_>,
+) -> anyhow::Result<()> {
     static HELP_MESSAGE: &str = "
 /help - Display all commands
 /create_course - Create new course and get it's ID
@@ -385,7 +390,7 @@ async fn handle_main_menu_interaction(bot: Bot, user: &User, message: &str) -> a
             );
             let course_id = CourseId(tail.parse().unwrap());
             // FIXME: check course existance
-            STATE.entry(user.id).or_default().current_screen = Screen::Course(course_id);
+            user_state.current_screen = Screen::Course(course_id);
         }
         _ => todo!(),
     }
@@ -397,6 +402,7 @@ async fn handle_course_interaction(
     user: &User,
     message: &str,
     course_id: CourseId,
+    mut user_state: MutUserState<'_, '_>,
 ) -> anyhow::Result<()> {
     static HELP_MESSAGE: &str = "
 /card CARD_NAME — Try to complete card
@@ -446,6 +452,7 @@ async fn handle_course_interaction(
                     course_id,
                     card_name: tail.to_owned(),
                 },
+                user_state,
             )
             .await?;
         }
@@ -503,6 +510,7 @@ async fn handle_course_interaction(
                     .await
                     .unwrap()?,
                 )],
+                user_state,
             )
             .await?;
         }
@@ -522,7 +530,7 @@ async fn handle_course_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            handle_event(bot, Event::Clear { user_id: user.id }).await?;
+            handle_event(bot, Event::Clear { user_id: user.id }, user_state).await?;
         }
         "/change_course_graph" => {
             log::info!(
@@ -544,6 +552,7 @@ async fn handle_course_interaction(
                     user_id: user.id,
                     course_id,
                 },
+                user_state,
             )
             .await?;
         }
@@ -567,6 +576,7 @@ async fn handle_course_interaction(
                     user_id: user.id,
                     course_id,
                 },
+                user_state,
             )
             .await?;
         }
@@ -599,6 +609,7 @@ async fn handle_course_interaction(
                     )
                     .into(),
                 ],
+                user_state,
             )
             .await?;
         }
@@ -632,6 +643,7 @@ async fn handle_course_interaction(
                     )
                     .into(),
                 ],
+                user_state,
             )
             .await?;
         }
@@ -655,48 +667,45 @@ async fn handle_course_interaction(
                 for error in errors {
                     msgs.push(error.into());
                 }
-                send_interactions(bot, user.id, msgs).await?;
+                send_interactions(bot, user.id, msgs, user_state).await?;
             } else {
-                send_interactions(bot, user.id, vec!["No errors!".into()]).await?;
+                send_interactions(bot, user.id, vec!["No errors!".into()], user_state).await?;
             }
         }
         // dialogue handling
-        _ => {
-            let mut user_state = STATE.entry(user.id).or_default();
-            match &mut user_state.current_interaction {
-                Some(UserInteraction {
-                    interactions,
-                    current,
-                    current_id,
-                    current_message,
-                    answers,
-                    channel: _,
-                }) => match &interactions[*current] {
-                    TelegramInteraction::UserInput => {
-                        let user_input = message.to_owned();
+        _ => match &mut user_state.current_interaction {
+            Some(UserInteraction {
+                interactions,
+                current,
+                current_id,
+                current_message,
+                answers,
+                channel: _,
+            }) => match &interactions[*current] {
+                TelegramInteraction::UserInput => {
+                    let user_input = message.to_owned();
 
-                        bot.delete_message(user.id, current_message.unwrap())
-                            .await
-                            .log_err();
+                    bot.delete_message(user.id, current_message.unwrap())
+                        .await
+                        .log_err();
 
-                        answers.push(user_input);
-                        *current += 1;
-                        *current_id = rand::random();
+                    answers.push(user_input);
+                    *current += 1;
+                    *current_id = rand::random();
 
-                        progress_on_user_event(bot, user.id, &mut user_state.current_interaction)
-                            .await
-                            .log_err()
-                            .unwrap();
-                    }
-                    _ => {
-                        bot.send_message(user.id, "Unexpected input").await?;
-                    }
-                },
-                None => {
-                    bot.send_message(user.id, "Command not found!").await?;
+                    progress_on_user_event(bot, user.id, &mut user_state.current_interaction)
+                        .await
+                        .log_err()
+                        .unwrap();
                 }
+                _ => {
+                    bot.send_message(user.id, "Unexpected input").await?;
+                }
+            },
+            None => {
+                bot.send_message(user.id, "Command not found!").await?;
             }
-        }
+        },
     }
     Ok(())
 }

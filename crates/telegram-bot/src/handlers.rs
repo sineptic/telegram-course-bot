@@ -3,18 +3,29 @@ use teloxide_core::types::{CallbackQuery, InputFile, ParseMode};
 use tokio::sync::oneshot;
 
 use super::*;
-use crate::{interaction_types::TelegramInteraction, state::UserInteraction};
+use crate::{
+    interaction_types::TelegramInteraction,
+    state::{MutUserState, UserInteraction},
+};
 
 pub async fn send_interactions(
     bot: Bot,
     user_id: UserId,
     interactions: impl IntoIterator<Item = TelegramInteraction>,
+    mut user_state: MutUserState<'_, '_>,
 ) -> anyhow::Result<()> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async {
         let _ = rx.await;
     });
-    set_task_for_user(bot, user_id, interactions.into_iter().collect(), tx).await
+    set_task_for_user(
+        bot,
+        user_id,
+        interactions.into_iter().collect(),
+        tx,
+        user_state,
+    )
+    .await
 }
 
 pub async fn set_task_for_user(
@@ -22,9 +33,8 @@ pub async fn set_task_for_user(
     user_id: UserId,
     interactions: Vec<TelegramInteraction>,
     channel: oneshot::Sender<Vec<String>>,
+    mut user_state: MutUserState<'_, '_>,
 ) -> anyhow::Result<()> {
-    let mut user_state = STATE.entry(user_id).or_default();
-
     user_state.current_interaction = Some(UserInteraction {
         interactions,
         current: 0,
@@ -38,7 +48,11 @@ pub async fn set_task_for_user(
     Ok(())
 }
 
-pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> anyhow::Result<()> {
+pub async fn callback_handler(
+    bot: Bot,
+    q: CallbackQuery,
+    users_state: &DashMap<UserId, UserState>,
+) -> anyhow::Result<()> {
     {
         let CallbackQuery { id, from, data, .. } = &q;
         log::debug!("get callback query, 'id: {id}, from: {from:?}, data: {data:?}'");
@@ -51,7 +65,7 @@ pub async fn callback_handler(bot: Bot, q: CallbackQuery) -> anyhow::Result<()> 
 
     let _ = bot.answer_callback_query(q.id).await;
 
-    let Some(mut user_state) = STATE.get_mut(&user_id) else {
+    let Some(mut user_state) = users_state.get_mut(&user_id) else {
         log::debug!("user {user_id} not in dialogue");
         return Ok(());
     };

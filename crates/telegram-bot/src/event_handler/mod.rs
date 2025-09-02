@@ -7,6 +7,7 @@ use std::{
 use anyhow::Context;
 use chrono::{DateTime, Local};
 use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
+use dashmap::DashMap;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide_core::{Bot, prelude::Requester, types::UserId};
 
@@ -16,6 +17,7 @@ use crate::{
     database::CourseId,
     handlers::{send_interactions, set_task_for_user},
     interaction_types::{telegram_interaction::QuestionElement, *},
+    state::{MutUserState, UserState},
     utils::{Immutable, ResultExt},
 };
 
@@ -26,6 +28,7 @@ async fn get_user_answer(
     user_id: UserId,
     interactions: impl IntoIterator<Item = QuestionElement>,
     answers: Vec<String>,
+    mut user_state: MutUserState<'_, '_>,
 ) -> anyhow::Result<Option<String>> {
     let answer = get_user_answer_raw(
         bot,
@@ -34,6 +37,7 @@ async fn get_user_answer(
             .into_iter()
             .map(|x| x.into())
             .chain([TelegramInteraction::OneOf(answers)]),
+        user_state,
     )
     .await?;
     Ok(answer.map(|mut x| x.pop().unwrap()))
@@ -42,10 +46,11 @@ async fn get_user_answer_raw(
     bot: Bot,
     user_id: UserId,
     interactions: impl IntoIterator<Item = TelegramInteraction>,
+    mut user_state: MutUserState<'_, '_>,
 ) -> anyhow::Result<Option<Vec<String>>> {
     let interactions = interactions.into_iter().collect();
     let (tx, rx) = tokio::sync::oneshot::channel();
-    set_task_for_user(bot, user_id, interactions, tx).await?;
+    set_task_for_user(bot, user_id, interactions, tx, user_state).await?;
     let Ok(answer) = rx.await else {
         return Ok(None);
     };
@@ -57,9 +62,10 @@ async fn get_card_answer(
     user_id: UserId,
     interactions: impl IntoIterator<Item = QuestionElement>,
     answers: Vec<String>,
+    mut user_state: MutUserState<'_, '_>,
 ) -> anyhow::Result<Option<String>> {
     // TODO: add 'I dont know' option
-    get_user_answer(bot, user_id, interactions, answers).await
+    get_user_answer(bot, user_id, interactions, answers, user_state).await
 }
 
 fn now() -> DateTime<Local> {
@@ -69,7 +75,11 @@ fn now() -> DateTime<Local> {
     **START_TIME + diff * 3600
 }
 
-pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
+pub async fn handle_event(
+    bot: Bot,
+    event: Event,
+    mut user_state: MutUserState<'_, '_>,
+) -> anyhow::Result<()> {
     match event {
         Event::ReviseCard {
             user_id,
@@ -94,12 +104,14 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                     bot.clone(),
                     user_id,
                     vec!["You should learn all dependencies before starting new card.".into()],
+                    user_state,
                 )
                 .await?;
                 return Ok(());
             }
 
-            if let Some(rcx) = handle_revise(&card_name, bot, user_id, course_id).await {
+            if let Some(rcx) = handle_revise(&card_name, bot, user_id, course_id, user_state).await
+            {
                 let mut progress =
                     arc_deep_clone(STORAGE.get_progress(user_id, course_id).unwrap());
                 progress.repetition(&card_name, rcx);
@@ -111,7 +123,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
             course_id,
             card_name,
         } => {
-            handle_revise(&card_name, bot, user_id, course_id).await;
+            handle_revise(&card_name, bot, user_id, course_id, user_state).await;
         }
         Event::Revise { user_id } => {
             todo!("select from all users deques");
@@ -128,7 +140,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
         Event::Clear { user_id } => {
             STORAGE.delete_user_progress(user_id);
 
-            send_interactions(bot, user_id, vec!["Progress cleared.".into()]).await?;
+            send_interactions(bot, user_id, vec!["Progress cleared.".into()], user_state).await?;
         }
         Event::ChangeCourseGraph { user_id, course_id } => {
             let (source, printed_graph) = {
@@ -171,6 +183,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                     "Print new source:".into(),
                     TelegramInteraction::UserInput,
                 ],
+                user_state,
             )
             .await?
             {
@@ -185,8 +198,13 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                     Ok(new_course_graph) => {
                         let mut new_course = arc_deep_clone(STORAGE.get_course(course_id).unwrap());
                         new_course.structure = new_course_graph;
-                        send_interactions(bot, user_id, vec!["Course graph changed".into()])
-                            .await?;
+                        send_interactions(
+                            bot,
+                            user_id,
+                            vec!["Course graph changed".into()],
+                            user_state,
+                        )
+                        .await?;
                     }
                     Err(err) => {
                         let err = strip_ansi_escapes::strip_str(err);
@@ -197,6 +215,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                                 "Your course graph has this errors:".into(),
                                 format!("```\n{err}\n```").into(),
                             ],
+                            user_state,
                         )
                         .await?;
                     }
@@ -227,6 +246,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                     "Print new source:".into(),
                     TelegramInteraction::UserInput,
                 ],
+                user_state,
             )
             .await?
             {
@@ -242,7 +262,8 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                         let mut new_course = arc_deep_clone(course);
                         new_course.tasks = new_deque;
                         STORAGE.set_course(course_id, new_course);
-                        send_interactions(bot, user_id, vec!["Deque changed".into()]).await?;
+                        send_interactions(bot, user_id, vec!["Deque changed".into()], user_state)
+                            .await?;
                     }
                     Err(err) => {
                         send_interactions(
@@ -252,6 +273,7 @@ pub async fn handle_event(bot: Bot, event: Event) -> anyhow::Result<()> {
                                 "Your deque has this errors:".into(),
                                 format!("```\n{err}\n```").into(),
                             ],
+                            user_state,
                         )
                         .await?;
                     }
@@ -285,6 +307,7 @@ async fn handle_revise(
     bot: Bot,
     user_id: UserId,
     course_id: CourseId,
+    mut user_state: MutUserState<'_, '_>,
 ) -> Option<RepetitionContext> {
     let Task {
         question,
@@ -298,9 +321,14 @@ async fn handle_revise(
                 if let Some(x) = course.tasks.tasks.get(id) {
                     x
                 } else {
-                    send_interactions(bot, user_id, vec!["Card with this name not found".into()])
-                        .await
-                        .log_err();
+                    send_interactions(
+                        bot,
+                        user_id,
+                        vec!["Card with this name not found".into()],
+                        user_state,
+                    )
+                    .await
+                    .log_err();
                     return None;
                 }
             },
@@ -310,15 +338,20 @@ async fn handle_revise(
     };
 
     let mut correct = false;
-    if let Some(user_answer) =
-        get_card_answer(bot.clone(), user_id, question.clone(), options.clone())
-            .await
-            .log_err()
-            .unwrap()
+    if let Some(user_answer) = get_card_answer(
+        bot.clone(),
+        user_id,
+        question.clone(),
+        options.clone(),
+        user_state,
+    )
+    .await
+    .log_err()
+    .unwrap()
     {
         if user_answer == options[answer] {
             correct = true;
-            send_interactions(bot.clone(), user_id, vec!["Correct!".into()])
+            send_interactions(bot.clone(), user_id, vec!["Correct!".into()], user_state)
                 .await
                 .log_err();
         } else {
@@ -326,6 +359,7 @@ async fn handle_revise(
                 bot.clone(),
                 user_id,
                 vec![format!("Wrong. Answer is {}", options[answer]).into()],
+                user_state,
             )
             .await
             .log_err();
@@ -337,6 +371,7 @@ async fn handle_revise(
                         .iter()
                         .map(|x| x.clone().into())
                         .collect::<Vec<TelegramInteraction>>(),
+                    user_state,
                 )
                 .await
                 .log_err();
