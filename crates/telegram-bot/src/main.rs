@@ -22,7 +22,7 @@ use crate::{
     event_handler::{handle_event, syncronize},
     handlers::{callback_handler, progress_on_user_event, send_interactions},
     interaction_types::{TelegramInteraction, deque::Deque},
-    state::{UserInteraction, UserState},
+    state::{Screen, UserInteraction, UserState},
     utils::ResultExt,
 };
 static STATE: LazyLock<DashMap<UserId, UserState>> = LazyLock::new(DashMap::new);
@@ -216,32 +216,6 @@ mod database {
             self.progress.remove(&user);
         }
     }
-    impl Courses {
-        pub fn partial_serialize(&self) -> (u64, Vec<(CourseId, Course)>) {
-            todo!()
-            // (
-            //     self.next_course_id,
-            //     self.data
-            //         .iter()
-            //         .map(|(id, value)| (*id, value.clone()))
-            //         .collect::<Vec<_>>(),
-            // )
-        }
-        pub fn partial_deserialize(next_course_id: u64, courses: Vec<(CourseId, Course)>) -> Self {
-            todo!()
-            // let mut owners_index: BTreeMap<UserId, Vec<CourseId>> = BTreeMap::new();
-            // let mut data = BTreeMap::new();
-            // for (id, course) in courses {
-            //     owners_index.entry(course.owner_id).or_default().push(id);
-            //     assert!(data.insert(id, course).is_none());
-            // }
-            // Self {
-            //     next_course_id,
-            //     owners_index,
-            //     data,
-            // }
-        }
-    }
     impl Course {
         pub fn default_user_progress(&self) -> UserProgress {
             let mut user_progress = UserProgress::default();
@@ -338,7 +312,21 @@ async fn update_handler(bot: Bot, update: Update) {
             };
             assert!(!text.is_empty());
             log::trace!("user {user:?} sends message '{text}'.");
-            handle_message(bot, user, text).await.log_err();
+            let mut user_state = STATE.entry(user.id).or_default();
+            match user_state.current_screen {
+                Screen::Main => {
+                    drop(user_state);
+                    handle_main_menu_interaction(bot, user, text)
+                        .await
+                        .log_err();
+                }
+                Screen::Course(course_id) => {
+                    drop(user_state);
+                    handle_course_interaction(bot, user, text, course_id)
+                        .await
+                        .log_err();
+                }
+            }
         }
         UpdateKind::CallbackQuery(callback_query) => {
             callback_handler(bot, callback_query).await.log_err();
@@ -347,18 +335,11 @@ async fn update_handler(bot: Bot, update: Update) {
     };
 }
 
-async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<()> {
+async fn handle_main_menu_interaction(bot: Bot, user: &User, message: &str) -> anyhow::Result<()> {
     static HELP_MESSAGE: &str = "
+/help - Display all commands
 /create_course - Create new course and get it's ID
-/card COURSE_ID CARD_NAME — Try to complete card
-/graph COURSE_ID— View course structure
-/help — Display all commands
-/clear — Reset your state to default(clear all progress)
-/change_course_graph COURSE_ID
-/change_deque COURSE_ID
-/view_course_graph_source COURSE_ID
-/view_deque_source COURSE_ID
-/view_course_errors COURSE_ID
+/course COURSE_ID - Go to courses menu
 ";
 
     let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
@@ -396,9 +377,50 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
             bot.send_message(user.id, format!("Course created with id {}", id.0))
                 .await?;
         }
+        "/course" => {
+            log::info!(
+                "user {}({}) sends course command",
+                user.username.clone().unwrap_or("unknown".into()),
+                user.id
+            );
+            let course_id = CourseId(tail.parse().unwrap());
+            // FIXME: check course existance
+            STATE.entry(user.id).or_default().current_screen = Screen::Course(course_id);
+        }
+        _ => todo!(),
+    }
+    Ok(())
+}
+
+async fn handle_course_interaction(
+    bot: Bot,
+    user: &User,
+    message: &str,
+    course_id: CourseId,
+) -> anyhow::Result<()> {
+    static HELP_MESSAGE: &str = "
+/card CARD_NAME — Try to complete card
+/graph — View course structure
+/help — Display all commands
+/clear — Reset your state to default(clear all progress)
+/change_course_graph
+/change_deque
+/view_course_graph_source
+/view_deque_source
+/view_course_errors
+";
+
+    let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
+    match first_word {
+        "/help" => {
+            log::info!(
+                "user {}({}) sends help command",
+                user.username.clone().unwrap_or("unknown".into()),
+                user.id
+            );
+            bot.send_message(user.id, HELP_MESSAGE).await?;
+        }
         "/card" => {
-            let (first_word, tail) = tail.trim().split_once(" ").unwrap_or((tail, ""));
-            let course_id = CourseId(first_word.parse().unwrap());
             if tail.contains(" ") {
                 bot.send_message(user.id, "Error: Card name should not contain spaces.")
                     .await?;
@@ -428,12 +450,16 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
             .await?;
         }
         "/graph" => {
-            let course_id = CourseId(tail.parse::<u64>().unwrap());
             log::info!(
                 "user {}({}) sends graph command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
+            if !tail.is_empty() {
+                bot.send_message(user.id, "graph command doesn't expect any arguments.")
+                    .await?;
+                return Ok(());
+            }
             if !syncronize(user.id, course_id).await {
                 bot.send_message(
                     user.id,
@@ -481,6 +507,7 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
             .await?;
         }
         "/revise" => {
+            // TODO
             log::info!(
                 "user {}({}) sends revise command",
                 user.username.clone().unwrap_or("unknown".into()),
@@ -498,12 +525,19 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
             handle_event(bot, Event::Clear { user_id: user.id }).await?;
         }
         "/change_course_graph" => {
-            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends change_course_graph command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
+            if !tail.is_empty() {
+                bot.send_message(
+                    user.id,
+                    "change_course_graph command doesn't expect any arguments.",
+                )
+                .await?;
+                return Ok(());
+            }
             handle_event(
                 bot,
                 Event::ChangeCourseGraph {
@@ -514,12 +548,19 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
             .await?;
         }
         "/change_deque" => {
-            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends change_deque command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
+            if !tail.is_empty() {
+                bot.send_message(
+                    user.id,
+                    "change_deque command doesn't expect any arguments.",
+                )
+                .await?;
+                return Ok(());
+            }
             handle_event(
                 bot,
                 Event::ChangeDeque {
@@ -530,12 +571,19 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
             .await?;
         }
         "/view_course_graph_source" => {
-            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends view_course_graph_source command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
+            if !tail.is_empty() {
+                bot.send_message(
+                    user.id,
+                    "view_course_graph_source command doesn't expect any arguments.",
+                )
+                .await?;
+                return Ok(());
+            }
             send_interactions(
                 bot,
                 user.id,
@@ -555,12 +603,19 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
             .await?;
         }
         "/view_deque_source" => {
-            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends view_deque_source command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
+            if !tail.is_empty() {
+                bot.send_message(
+                    user.id,
+                    "view_deque_source command doesn't expect any arguments.",
+                )
+                .await?;
+                return Ok(());
+            }
             send_interactions(
                 bot,
                 user.id,
@@ -581,12 +636,19 @@ async fn handle_message(bot: Bot, user: &User, message: &str) -> anyhow::Result<
             .await?;
         }
         "/view_course_errors" => {
-            let course_id = CourseId(tail.parse().unwrap());
             log::info!(
                 "user {}({}) sends view_course_errors command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
+            if !tail.is_empty() {
+                bot.send_message(
+                    user.id,
+                    "view_course_errors command doesn't expect any arguments.",
+                )
+                .await?;
+                return Ok(());
+            }
             if let Some(errors) = STORAGE.get_course(course_id).unwrap().get_errors() {
                 let mut msgs = Vec::new();
                 msgs.push("Errors:".into());
