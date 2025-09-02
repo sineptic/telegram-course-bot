@@ -23,7 +23,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
-    needs: check
+    # needs: check
     outputs:
       executable_id: ${{ steps.upload_executable.outputs.artifact-id }}
     steps:
