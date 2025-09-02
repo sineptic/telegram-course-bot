@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeMap,
     str::FromStr,
     sync::{Arc, LazyLock},
 };
@@ -27,7 +26,7 @@ async fn get_user_answer(
     user_id: UserId,
     interactions: impl IntoIterator<Item = QuestionElement>,
     answers: Vec<String>,
-    mut user_state: MutUserState<'_, '_>,
+    user_state: MutUserState<'_>,
 ) -> anyhow::Result<Option<String>> {
     let answer = get_user_answer_raw(
         bot,
@@ -45,7 +44,7 @@ async fn get_user_answer_raw(
     bot: Bot,
     user_id: UserId,
     interactions: impl IntoIterator<Item = TelegramInteraction>,
-    mut user_state: MutUserState<'_, '_>,
+    user_state: MutUserState<'_>,
 ) -> anyhow::Result<Option<Vec<String>>> {
     let interactions = interactions.into_iter().collect();
     let (tx, rx) = tokio::sync::oneshot::channel();
@@ -61,7 +60,7 @@ async fn get_card_answer(
     user_id: UserId,
     interactions: impl IntoIterator<Item = QuestionElement>,
     answers: Vec<String>,
-    mut user_state: MutUserState<'_, '_>,
+    user_state: MutUserState<'_>,
 ) -> anyhow::Result<Option<String>> {
     // TODO: add 'I dont know' option
     get_user_answer(bot, user_id, interactions, answers, user_state).await
@@ -75,10 +74,10 @@ fn now() -> DateTime<Local> {
 }
 
 pub async fn handle_revise(
-    bot: Bot,
-    mut user_state: MutUserState<'_, '_>,
-    user_id: UserId,
-    course_id: CourseId,
+    _bot: Bot,
+    mut _user_state: MutUserState<'_>,
+    _user_id: UserId,
+    _course_id: CourseId,
 ) {
     todo!();
     // syncronize(user_id, course_id);
@@ -94,7 +93,7 @@ pub async fn handle_revise(
 
 pub async fn handle_changing_course_graph(
     bot: Bot,
-    mut user_state: MutUserState<'_, '_>,
+    user_state: MutUserState<'_>,
     user_id: UserId,
     course_id: CourseId,
 ) -> anyhow::Result<()> {
@@ -148,29 +147,20 @@ pub async fn handle_changing_course_graph(
             assert!(answer[i].is_empty());
         }
         let answer = answer.last().unwrap();
+        dbg!(answer);
 
         match CourseGraph::from_str(answer) {
             Ok(new_course_graph) => {
                 let mut new_course = arc_deep_clone(STORAGE.get_course(course_id).unwrap());
                 new_course.structure = new_course_graph;
-                send_interactions(
-                    bot,
-                    user_id,
-                    vec!["Course graph changed".into()],
-                    user_state,
-                )
-                .await?;
+                STORAGE.set_course(course_id, new_course);
+                bot.send_message(user_id, "Course graph changed.").await?;
             }
             Err(err) => {
                 let err = strip_ansi_escapes::strip_str(err);
-                send_interactions(
-                    bot,
+                bot.send_message(
                     user_id,
-                    vec![
-                        "Your course graph has this errors:".into(),
-                        format!("```\n{err}\n```").into(),
-                    ],
-                    user_state,
+                    format!("Your course graph has this errors:\n```\n{err}\n```"),
                 )
                 .await?;
             }
@@ -180,7 +170,7 @@ pub async fn handle_changing_course_graph(
 }
 pub async fn handle_changing_deque(
     bot: Bot,
-    mut user_state: MutUserState<'_, '_>,
+    user_state: MutUserState<'_>,
     user_id: UserId,
     course_id: CourseId,
 ) -> anyhow::Result<()> {
@@ -223,17 +213,12 @@ pub async fn handle_changing_deque(
                 let mut new_course = arc_deep_clone(course);
                 new_course.tasks = new_deque;
                 STORAGE.set_course(course_id, new_course);
-                send_interactions(bot, user_id, vec!["Deque changed".into()], user_state).await?;
+                bot.send_message(user_id, "Deque changed.").await?;
             }
             Err(err) => {
-                send_interactions(
-                    bot,
+                bot.send_message(
                     user_id,
-                    vec![
-                        "Your deque has this errors:".into(),
-                        format!("```\n{err}\n```").into(),
-                    ],
-                    user_state,
+                    format!("Your deque has this errors:\n```\n{err}\n```"),
                 )
                 .await?;
             }
@@ -246,7 +231,8 @@ async fn learn_card(
     bot: Bot,
     user_id: UserId,
     course_id: CourseId,
-    user_state: MutUserState<'_, '_>,
+    user_state: MutUserState<'_>,
+    user_states: &DashMap<UserId, UserState>,
     card_name: String,
 ) -> Result<(), anyhow::Error> {
     syncronize(user_id, course_id);
@@ -265,7 +251,9 @@ async fn learn_card(
         .await?;
         return Ok(());
     }
-    if let Some(rcx) = complete_card(bot, user_id, course_id, user_state, &card_name).await {
+    if let Some(rcx) =
+        complete_card(bot, user_id, course_id, user_state, user_states, &card_name).await
+    {
         let mut progress = arc_deep_clone(STORAGE.get_progress(user_id, course_id));
         progress.repetition(&card_name, rcx);
         STORAGE.set_course_progress(user_id, course_id, progress);
@@ -279,7 +267,7 @@ fn arc_deep_clone<T: Clone>(arc: Arc<T>) -> T {
     Arc::into_inner(new_value).unwrap()
 }
 
-pub fn syncronize(user_id: UserId, course_id: CourseId) {
+pub fn syncronize(_user_id: UserId, _course_id: CourseId) {
     return;
     todo!();
     // let mut user_progress = get_progress(course_id, user_id);
@@ -294,7 +282,8 @@ pub async fn complete_card(
     bot: Bot,
     user_id: UserId,
     course_id: CourseId,
-    mut user_state: MutUserState<'_, '_>,
+    user_state: MutUserState<'_>,
+    user_states: &DashMap<UserId, UserState>,
     card_name: &str,
 ) -> Option<RepetitionContext> {
     let Task {
@@ -339,19 +328,13 @@ pub async fn complete_card(
     {
         if user_answer == options[answer] {
             correct = true;
-            send_interactions(bot.clone(), user_id, vec!["Correct!".into()], user_state)
+            bot.send_message(user_id, "Correct!").await.log_err();
+        } else {
+            bot.send_message(user_id, format!("Wrong. Answer is {}", options[answer]))
                 .await
                 .log_err();
-        } else {
-            send_interactions(
-                bot.clone(),
-                user_id,
-                vec![format!("Wrong. Answer is {}", options[answer]).into()],
-                user_state,
-            )
-            .await
-            .log_err();
             if let Some(explanation) = explanation {
+                let user_state = user_states.get_mut(&user_id).unwrap();
                 send_interactions(
                     bot.clone(),
                     user_id,

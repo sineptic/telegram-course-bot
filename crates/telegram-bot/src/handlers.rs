@@ -12,7 +12,7 @@ pub async fn send_interactions(
     bot: Bot,
     user_id: UserId,
     interactions: impl IntoIterator<Item = TelegramInteraction>,
-    mut user_state: MutUserState<'_, '_>,
+    user_state: MutUserState<'_>,
 ) -> anyhow::Result<()> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     tokio::spawn(async {
@@ -33,7 +33,7 @@ pub async fn set_task_for_user(
     user_id: UserId,
     interactions: Vec<TelegramInteraction>,
     channel: oneshot::Sender<Vec<String>>,
-    mut user_state: MutUserState<'_, '_>,
+    mut user_state: MutUserState<'_>,
 ) -> anyhow::Result<()> {
     user_state.current_interaction = Some(UserInteraction {
         interactions,

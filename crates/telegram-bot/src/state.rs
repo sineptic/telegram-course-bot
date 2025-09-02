@@ -10,7 +10,7 @@ pub struct UserState {
     pub current_interaction: Option<UserInteraction>,
 }
 
-pub type MutUserState<'a, 'b> = &'a mut RefMut<'b, UserId, UserState>;
+pub type MutUserState<'a> = RefMut<'a, UserId, UserState>;
 
 #[derive(Default)]
 pub enum Screen {

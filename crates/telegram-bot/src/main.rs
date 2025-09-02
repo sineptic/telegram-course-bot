@@ -1,5 +1,4 @@
-#![allow(unused)]
-use std::{cmp::max, sync::LazyLock};
+use std::cmp::max;
 
 use anyhow::Context;
 use course_graph::{graph::CourseGraph, progress_store::TaskProgressStoreExt};
@@ -9,7 +8,7 @@ use teloxide_core::{
     RequestError,
     payloads::SendMessageSetters,
     prelude::*,
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, Update, UpdateKind, User},
+    types::{InlineKeyboardButton, InlineKeyboardMarkup, Update, UpdateKind, User},
 };
 
 mod event_handler;
@@ -41,8 +40,6 @@ mod database {
 
     use std::{
         collections::{BTreeMap, HashMap, btree_map::Entry},
-        ops::{Deref, DerefMut},
-        rc::Rc,
         sync::{Arc, LazyLock, Mutex, MutexGuard},
     };
 
@@ -102,9 +99,6 @@ mod database {
         ) -> Option<()> {
             self.inner()
                 .set_course_progress(user_id, course_id, progress)
-        }
-        pub fn delete_user_progress(&self, user_id: UserId) {
-            self.inner().delete_user_progress(user_id);
         }
     }
     struct Courses {
@@ -180,9 +174,6 @@ mod database {
             *self.progress.get_mut(&user_id)?.get_mut(&course_id)? = Arc::new(progress);
             Some(())
         }
-        pub fn delete_user_progress(&mut self, user: UserId) {
-            self.progress.remove(&user);
-        }
     }
     impl Course {
         pub fn default_user_progress(&self) -> UserProgress {
@@ -221,8 +212,6 @@ mod database {
 
 #[tokio::main]
 async fn main() {
-    use handlers::*;
-
     dotenvy::dotenv().expect("'TELOXIDE_TOKEN' variable should be specified in '.env' file");
     pretty_env_logger::init();
     let bot = Bot::from_env();
@@ -262,7 +251,7 @@ async fn main() {
     }
 }
 
-async fn update_handler(bot: Bot, update: Update, users_state: &DashMap<UserId, UserState>) {
+async fn update_handler(bot: Bot, update: Update, user_states: &DashMap<UserId, UserState>) {
     match update.kind {
         UpdateKind::Message(message) => {
             let Some(ref user) = message.from else {
@@ -281,22 +270,22 @@ async fn update_handler(bot: Bot, update: Update, users_state: &DashMap<UserId, 
             };
             assert!(!text.is_empty());
             log::trace!("user {user:?} sends message '{text}'.");
-            let mut user_state = users_state.entry(user.id).or_default();
+            let user_state = user_states.entry(user.id).or_default();
             match user_state.current_screen {
                 Screen::Main => {
-                    handle_main_menu_interaction(bot, user, text, &mut user_state)
+                    handle_main_menu_interaction(bot, user, text, user_state)
                         .await
                         .log_err();
                 }
                 Screen::Course(course_id) => {
-                    handle_course_interaction(bot, user, text, course_id, &mut user_state)
+                    handle_course_interaction(bot, user, text, course_id, user_state, user_states)
                         .await
                         .log_err();
                 }
             }
         }
         UpdateKind::CallbackQuery(callback_query) => {
-            callback_handler(bot, callback_query, users_state)
+            callback_handler(bot, callback_query, user_states)
                 .await
                 .log_err();
         }
@@ -307,7 +296,7 @@ async fn update_handler(bot: Bot, update: Update, users_state: &DashMap<UserId, 
 async fn send_help_message(
     bot: Bot,
     user: &User,
-    mut user_state: MutUserState<'_, '_>,
+    user_state: &MutUserState<'_>,
 ) -> anyhow::Result<()> {
     let main_menu_help_message = "
 /help - Display all commands
@@ -349,20 +338,20 @@ async fn handle_main_menu_interaction(
     bot: Bot,
     user: &User,
     message: &str,
-    mut user_state: MutUserState<'_, '_>,
+    mut user_state: MutUserState<'_>,
 ) -> anyhow::Result<()> {
     let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
     match first_word {
         "/help" => {
             log_user_command(user, "help");
-            send_help_message(bot, user, user_state).await?;
+            send_help_message(bot, user, &user_state).await?;
         }
         "/start" => {
             log_user_command(user, "start");
             // TODO: onboarding
             bot.send_message(user.id, "TODO: onboarding").await?;
 
-            send_help_message(bot, user, user_state).await?;
+            send_help_message(bot, user, &user_state).await?;
         }
         "/create_course" => {
             log_user_command(user, "create_course");
@@ -376,7 +365,7 @@ async fn handle_main_menu_interaction(
             user_state.current_screen = Screen::Course(course_id);
             bot.send_message(user.id, "You are now in course menu.")
                 .await?;
-            send_help_message(bot, user, user_state).await?;
+            send_help_message(bot, user, &user_state).await?;
         }
         "/course" => {
             let Ok(course_id) = tail.parse() else {
@@ -401,7 +390,7 @@ async fn handle_main_menu_interaction(
             user_state.current_screen = Screen::Course(course_id);
             bot.send_message(user.id, "You are now in course menu.")
                 .await?;
-            send_help_message(bot, user, user_state).await?;
+            send_help_message(bot, user, &user_state).await?;
         }
         _ => {
             // FIXME
@@ -416,20 +405,21 @@ async fn handle_course_interaction(
     user: &User,
     message: &str,
     course_id: CourseId,
-    mut user_state: MutUserState<'_, '_>,
+    mut user_state: MutUserState<'_>,
+    user_states: &DashMap<UserId, UserState>,
 ) -> anyhow::Result<()> {
     let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
     match first_word {
         "/help" => {
             log_user_command(user, "help");
-            send_help_message(bot, user, user_state).await?;
+            send_help_message(bot, user, &user_state).await?;
         }
         "/exit" => {
             log_user_command(user, "exit");
             user_state.current_screen = Screen::Main;
             bot.send_message(user.id, "You are now in main menu.")
                 .await?;
-            send_help_message(bot, user, user_state).await?;
+            send_help_message(bot, user, &user_state).await?;
         }
         "/card" => {
             if tail.contains(" ") {
@@ -450,7 +440,7 @@ async fn handle_course_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            complete_card(bot, user.id, course_id, user_state, tail).await;
+            complete_card(bot, user.id, course_id, user_state, user_states, tail).await;
         }
         "/graph" => {
             log_user_command(user, "graph");
