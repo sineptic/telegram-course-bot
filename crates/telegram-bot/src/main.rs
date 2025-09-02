@@ -365,6 +365,14 @@ async fn send_help_message(
     Ok(())
 }
 
+fn log_user_command(user: &User, command_name: &str) {
+    log::info!(
+        "user {}({}) sends {command_name} command",
+        user.username.clone().unwrap_or("unknown".into()),
+        user.id
+    );
+}
+
 async fn handle_main_menu_interaction(
     bot: Bot,
     user: &User,
@@ -374,30 +382,18 @@ async fn handle_main_menu_interaction(
     let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
     match first_word {
         "/help" => {
-            log::info!(
-                "user {}({}) sends help command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "help");
             send_help_message(bot, user, user_state).await?;
         }
         "/start" => {
-            log::info!(
-                "user {}({}) sends start command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "start");
             // TODO: onboarding
             bot.send_message(user.id, "TODO: onboarding").await?;
 
             send_help_message(bot, user, user_state).await?;
         }
         "/create_course" => {
-            log::info!(
-                "user {}({}) sends create_course command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "create_course");
             let course_id = STORAGE.insert(Course {
                 owner_id: user.id,
                 structure: CourseGraph::default(),
@@ -411,11 +407,6 @@ async fn handle_main_menu_interaction(
             send_help_message(bot, user, user_state).await?;
         }
         "/course" => {
-            log::info!(
-                "user {}({}) sends course command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
             let Ok(course_id) = tail.parse() else {
                 bot.send_message(
                     user.id,
@@ -424,6 +415,11 @@ async fn handle_main_menu_interaction(
                 .await?;
                 return Ok(());
             };
+            log::info!(
+                "user {}({}) sends course '{course_id}' command",
+                user.username.clone().unwrap_or("unknown".into()),
+                user.id
+            );
             let course_id = CourseId(course_id);
             if STORAGE.get_course(course_id).is_none() {
                 bot.send_message(user.id, "Can't find course with this id.")
@@ -450,19 +446,11 @@ async fn handle_course_interaction(
     let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
     match first_word {
         "/help" => {
-            log::info!(
-                "user {}({}) sends help command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "help");
             send_help_message(bot, user, user_state).await?;
         }
         "/exit" => {
-            log::info!(
-                "user {}({}) sends help command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "exit");
             user_state.current_screen = Screen::Main;
             bot.send_message(user.id, "You are now in main menu.")
                 .await?;
@@ -499,11 +487,7 @@ async fn handle_course_interaction(
             .await?;
         }
         "/graph" => {
-            log::info!(
-                "user {}({}) sends graph command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "graph");
             if !tail.is_empty() {
                 bot.send_message(user.id, "graph command doesn't expect any arguments.")
                     .await?;
@@ -558,20 +542,12 @@ async fn handle_course_interaction(
         }
         "/revise" => {
             // TODO
-            log::info!(
-                "user {}({}) sends revise command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "revise");
             bot.send_message(user.id, "This command is temporarily disabled")
                 .await?;
         }
         "/change_course_graph" => {
-            log::info!(
-                "user {}({}) sends change_course_graph command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "change_course_graph");
             if !tail.is_empty() {
                 bot.send_message(
                     user.id,
@@ -591,11 +567,7 @@ async fn handle_course_interaction(
             .await?;
         }
         "/change_deque" => {
-            log::info!(
-                "user {}({}) sends change_deque command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "change_deque");
             if !tail.is_empty() {
                 bot.send_message(
                     user.id,
@@ -615,11 +587,7 @@ async fn handle_course_interaction(
             .await?;
         }
         "/view_course_graph_source" => {
-            log::info!(
-                "user {}({}) sends view_course_graph_source command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "view_course_graph_source");
             if !tail.is_empty() {
                 bot.send_message(
                     user.id,
@@ -648,11 +616,7 @@ async fn handle_course_interaction(
             .await?;
         }
         "/view_deque_source" => {
-            log::info!(
-                "user {}({}) sends view_deque_source command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "view_deque_source");
             if !tail.is_empty() {
                 bot.send_message(
                     user.id,
@@ -682,11 +646,7 @@ async fn handle_course_interaction(
             .await?;
         }
         "/view_course_errors" => {
-            log::info!(
-                "user {}({}) sends view_course_errors command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
+            log_user_command(user, "view_course_errors");
             if !tail.is_empty() {
                 bot.send_message(
                     user.id,
