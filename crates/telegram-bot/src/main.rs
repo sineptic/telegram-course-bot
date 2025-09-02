@@ -34,7 +34,7 @@ enum Event {
         course_id: CourseId,
         card_name: String,
     },
-    ReviseCard {
+    LearnCard {
         user_id: UserId,
         course_id: CourseId,
         card_name: String,
@@ -109,13 +109,9 @@ mod database {
         pub fn list_user_courses(&self, user_id: UserId) -> Option<Vec<CourseId>> {
             self.inner().list_user_courses(user_id)
         }
-        /// Returns None if there is no course with this id.
-        pub fn get_progress(
-            &self,
-            user_id: UserId,
-            course_id: CourseId,
-        ) -> Option<Arc<UserProgress>> {
-            self.inner().get_progress(user_id, course_id)
+        /// Panics if course doesn't exists
+        pub fn get_progress(&self, user_id: UserId, course_id: CourseId) -> Arc<UserProgress> {
+            self.inner().get_progress(user_id, course_id).unwrap()
         }
         /// Returns false if course doesn't exists or already tracked to user
         pub fn add_course_to_user(&self, user_id: UserId, course_id: CourseId) -> bool {
@@ -493,14 +489,7 @@ async fn handle_course_interaction(
                     .await?;
                 return Ok(());
             }
-            if !syncronize(user.id, course_id).await {
-                bot.send_message(
-                    user.id,
-                    format!("Course with id {} not found.", course_id.0),
-                )
-                .await?;
-                return Ok(());
-            };
+            syncronize(user.id, course_id);
 
             let Some(course) = STORAGE.get_course(course_id) else {
                 bot.send_message(
@@ -514,7 +503,6 @@ async fn handle_course_interaction(
 
             STORAGE
                 .get_progress(user.id, course_id)
-                .unwrap()
                 .generate_stmts()
                 .into_iter()
                 .for_each(|stmt| {

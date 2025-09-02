@@ -81,21 +81,15 @@ pub async fn handle_event(
     mut user_state: MutUserState<'_, '_>,
 ) -> anyhow::Result<()> {
     match event {
-        Event::ReviseCard {
+        Event::LearnCard {
             user_id,
             course_id,
             card_name,
         } => {
-            if !syncronize(user_id, course_id).await {
-                bot.send_message(
-                    user_id,
-                    format!("Course with id {} not found.", course_id.0),
-                )
-                .await?;
-                return Ok(());
-            }
+            syncronize(user_id, course_id);
+
             if matches!(
-                STORAGE.get_progress(user_id, course_id).unwrap()[&card_name],
+                STORAGE.get_progress(user_id, course_id)[&card_name],
                 TaskProgress::NotStarted {
                     could_be_learned: false
                 }
@@ -110,10 +104,9 @@ pub async fn handle_event(
                 return Ok(());
             }
 
-            if let Some(rcx) = handle_revise(&card_name, bot, user_id, course_id, user_state).await
+            if let Some(rcx) = complete_card(bot, user_id, course_id, user_state, &card_name).await
             {
-                let mut progress =
-                    arc_deep_clone(STORAGE.get_progress(user_id, course_id).unwrap());
+                let mut progress = arc_deep_clone(STORAGE.get_progress(user_id, course_id));
                 progress.repetition(&card_name, rcx);
                 STORAGE.set_course_progress(user_id, course_id, progress);
             }
@@ -123,7 +116,7 @@ pub async fn handle_event(
             course_id,
             card_name,
         } => {
-            handle_revise(&card_name, bot, user_id, course_id, user_state).await;
+            complete_card(bot, user_id, course_id, user_state, &card_name).await;
         }
         Event::Revise { user_id } => {
             todo!("select from all users deques");
@@ -285,9 +278,8 @@ fn arc_deep_clone<T: Clone>(arc: Arc<T>) -> T {
     Arc::into_inner(new_value).unwrap()
 }
 
-#[must_use]
-pub async fn syncronize(user_id: UserId, course_id: CourseId) -> bool {
-    return STORAGE.get_progress(user_id, course_id).is_some();
+pub fn syncronize(user_id: UserId, course_id: CourseId) {
+    return;
     todo!();
     // let mut user_progress = get_progress(course_id, user_id);
     // user_progress.syncronize(now().into());
@@ -297,12 +289,12 @@ pub async fn syncronize(user_id: UserId, course_id: CourseId) -> bool {
     //     .detect_recursive_fails(&mut *user_progress);
 }
 
-async fn handle_revise(
-    id: &String,
+async fn complete_card(
     bot: Bot,
     user_id: UserId,
     course_id: CourseId,
     mut user_state: MutUserState<'_, '_>,
+    card_name: &String,
 ) -> Option<RepetitionContext> {
     let Task {
         question,
@@ -313,7 +305,7 @@ async fn handle_revise(
         let course = STORAGE.get_course(course_id).unwrap();
         card::random_task(
             {
-                if let Some(x) = course.tasks.tasks.get(id) {
+                if let Some(x) = course.tasks.tasks.get(card_name) {
                     x
                 } else {
                     send_interactions(
