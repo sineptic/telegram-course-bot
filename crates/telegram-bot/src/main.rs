@@ -343,6 +343,7 @@ async fn send_help_message(
 /course COURSE_ID - Go to courses menu
 ";
     let course_help_message = "
+/exit - Go to main menu
 /card CARD_NAME — Try to complete card
 /graph — View course structure
 /help — Display all commands
@@ -449,6 +450,17 @@ async fn handle_course_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
+            send_help_message(bot, user, user_state).await?;
+        }
+        "/exit" => {
+            log::info!(
+                "user {}({}) sends help command",
+                user.username.clone().unwrap_or("unknown".into()),
+                user.id
+            );
+            user_state.current_screen = Screen::Main;
+            bot.send_message(user.id, "You are now in main menu.")
+                .await?;
             send_help_message(bot, user, user_state).await?;
         }
         "/card" => {
