@@ -137,11 +137,6 @@ pub async fn handle_event(
             //         .await?;
             // }
         }
-        Event::Clear { user_id } => {
-            STORAGE.delete_user_progress(user_id);
-
-            send_interactions(bot, user_id, vec!["Progress cleared.".into()], user_state).await?;
-        }
         Event::ChangeCourseGraph { user_id, course_id } => {
             let (source, printed_graph) = {
                 let Some(course) = STORAGE.get_course(course_id) else {

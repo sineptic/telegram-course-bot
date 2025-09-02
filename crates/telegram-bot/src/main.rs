@@ -42,9 +42,6 @@ enum Event {
     Revise {
         user_id: UserId,
     },
-    Clear {
-        user_id: UserId,
-    },
     ChangeCourseGraph {
         user_id: UserId,
         course_id: CourseId,
@@ -349,7 +346,6 @@ async fn send_help_message(
 /card CARD_NAME — Try to complete card
 /graph — View course structure
 /help — Display all commands
-/clear — Reset your state to default(clear all progress)
 /change_course_graph
 /change_deque
 /view_course_graph_source
@@ -540,14 +536,6 @@ async fn handle_course_interaction(
             );
             bot.send_message(user.id, "This command is temporarily disabled")
                 .await?;
-        }
-        "/clear" => {
-            log::info!(
-                "user {}({}) sends clear command",
-                user.username.clone().unwrap_or("unknown".into()),
-                user.id
-            );
-            handle_event(bot, Event::Clear { user_id: user.id }, user_state).await?;
         }
         "/change_course_graph" => {
             log::info!(
