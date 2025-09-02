@@ -340,7 +340,7 @@ async fn send_help_message(
     let main_menu_help_message = "
 /help - Display all commands
 /create_course - Create new course and get it's ID
-/course COURSE_ID - Go to courses menu
+/course COURSE_ID - Go to course menu
 ";
     let course_help_message = "
 /exit - Go to main menu
@@ -397,13 +397,17 @@ async fn handle_main_menu_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            let id = STORAGE.insert(Course {
+            let course_id = STORAGE.insert(Course {
                 owner_id: user.id,
                 structure: CourseGraph::default(),
                 tasks: Deque::default(),
             });
-            bot.send_message(user.id, format!("Course created with id {}.", id.0))
+            bot.send_message(user.id, format!("Course created with id {}.", course_id.0))
                 .await?;
+            user_state.current_screen = Screen::Course(course_id);
+            bot.send_message(user.id, "You are now in course menu.")
+                .await?;
+            send_help_message(bot, user, user_state).await?;
         }
         "/course" => {
             log::info!(
@@ -426,7 +430,7 @@ async fn handle_main_menu_interaction(
                 return Ok(());
             }
             user_state.current_screen = Screen::Course(course_id);
-            bot.send_message(user.id, "You are now in courses menu.")
+            bot.send_message(user.id, "You are now in course menu.")
                 .await?;
             send_help_message(bot, user, user_state).await?;
         }
