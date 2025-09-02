@@ -18,41 +18,17 @@ mod interaction_types;
 mod state;
 mod utils;
 
+use database::*;
+
 use crate::{
-    event_handler::{handle_event, syncronize},
+    event_handler::{
+        complete_card, handle_changing_course_graph, handle_changing_deque, syncronize,
+    },
     handlers::{callback_handler, progress_on_user_event, send_interactions},
     interaction_types::{TelegramInteraction, deque::Deque},
     state::*,
     utils::ResultExt,
 };
-
-#[derive(Clone, Debug)]
-#[allow(unused)]
-enum Event {
-    PreviewCard {
-        user_id: UserId,
-        course_id: CourseId,
-        card_name: String,
-    },
-    LearnCard {
-        user_id: UserId,
-        course_id: CourseId,
-        card_name: String,
-    },
-    Revise {
-        user_id: UserId,
-    },
-    ChangeCourseGraph {
-        user_id: UserId,
-        course_id: CourseId,
-    },
-    ChangeDeque {
-        user_id: UserId,
-        course_id: CourseId,
-    },
-}
-
-use database::*;
 mod database {
     pub static STORAGE: LazyLock<CoursesWrapper> = LazyLock::new(|| CoursesWrapper {
         inner: Mutex::new(Courses {
@@ -471,16 +447,7 @@ async fn handle_course_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            handle_event(
-                bot,
-                Event::PreviewCard {
-                    user_id: user.id,
-                    course_id,
-                    card_name: tail.to_owned(),
-                },
-                user_state,
-            )
-            .await?;
+            complete_card(bot, user.id, course_id, user_state, tail).await;
         }
         "/graph" => {
             log_user_command(user, "graph");
@@ -544,15 +511,7 @@ async fn handle_course_interaction(
                 .await?;
                 return Ok(());
             }
-            handle_event(
-                bot,
-                Event::ChangeCourseGraph {
-                    user_id: user.id,
-                    course_id,
-                },
-                user_state,
-            )
-            .await?;
+            handle_changing_course_graph(bot, user_state, user.id, course_id).await?;
         }
         "/change_deque" => {
             log_user_command(user, "change_deque");
@@ -564,15 +523,7 @@ async fn handle_course_interaction(
                 .await?;
                 return Ok(());
             }
-            handle_event(
-                bot,
-                Event::ChangeDeque {
-                    user_id: user.id,
-                    course_id,
-                },
-                user_state,
-            )
-            .await?;
+            handle_changing_deque(bot, user_state, user.id, course_id).await?;
         }
         "/view_course_graph_source" => {
             log_user_command(user, "view_course_graph_source");

@@ -11,7 +11,6 @@ use dashmap::DashMap;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide_core::{Bot, prelude::Requester, types::UserId};
 
-use super::Event;
 use crate::{
     STORAGE,
     database::CourseId,
@@ -75,199 +74,201 @@ fn now() -> DateTime<Local> {
     **START_TIME + diff * 3600
 }
 
-pub async fn handle_event(
+pub async fn handle_revise(
     bot: Bot,
-    event: Event,
     mut user_state: MutUserState<'_, '_>,
-) -> anyhow::Result<()> {
-    match event {
-        Event::LearnCard {
-            user_id,
-            course_id,
-            card_name,
-        } => {
-            syncronize(user_id, course_id);
+    user_id: UserId,
+    course_id: CourseId,
+) {
+    todo!();
+    // syncronize(user_id, course_id);
+    //
+    // let a = get_progress(user_id)
+    //     .revise(async |id| handle_revise(id, bot.clone(), user_id).await.unwrap())
+    //     .await;
+    // if a.is_none() {
+    //     bot.send_message(user_id, "You don't have card to revise.")
+    //         .await?;
+    // }
+}
 
-            if matches!(
-                STORAGE.get_progress(user_id, course_id)[&card_name],
-                TaskProgress::NotStarted {
-                    could_be_learned: false
-                }
-            ) {
+pub async fn handle_changing_course_graph(
+    bot: Bot,
+    mut user_state: MutUserState<'_, '_>,
+    user_id: UserId,
+    course_id: CourseId,
+) -> anyhow::Result<()> {
+    let (source, printed_graph) = {
+        let Some(course) = STORAGE.get_course(course_id) else {
+            bot.send_message(
+                user_id,
+                format!("Course with id {} not found.", course_id.0),
+            )
+            .await?;
+            return Ok(());
+        };
+        if course.owner_id != user_id {
+            bot.send_message(user_id, "It's not your course.").await?;
+            return Ok(());
+        }
+        let course_graph = &course.structure;
+        let source = course_graph.get_source().to_owned();
+        let graph = course_graph.generate_structure_graph();
+        let printed_graph = tokio::task::spawn_blocking(move || {
+            graphviz_rust::exec(
+                graph,
+                &mut graphviz_rust::printer::PrinterContext::default(),
+                vec![graphviz_rust::cmd::Format::Jpeg.into()],
+            )
+            .context("Failed to run 'dot'")
+        })
+        .await
+        .unwrap()?;
+        (source, printed_graph)
+    };
+
+    if let Some(answer) = get_user_answer_raw(
+        bot.clone(),
+        user_id,
+        vec![
+            "Current graph:".into(),
+            TelegramInteraction::PersonalImage(printed_graph),
+            "Courrent source:".into(),
+            format!("```\n{source}\n```").into(),
+            "Print new source:".into(),
+            TelegramInteraction::UserInput,
+        ],
+        user_state,
+    )
+    .await?
+    {
+        assert_eq!(answer.len(), 6);
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..answer.len() - 1 {
+            assert!(answer[i].is_empty());
+        }
+        let answer = answer.last().unwrap();
+
+        match CourseGraph::from_str(answer) {
+            Ok(new_course_graph) => {
+                let mut new_course = arc_deep_clone(STORAGE.get_course(course_id).unwrap());
+                new_course.structure = new_course_graph;
                 send_interactions(
-                    bot.clone(),
+                    bot,
                     user_id,
-                    vec!["You should learn all dependencies before starting new card.".into()],
+                    vec!["Course graph changed".into()],
                     user_state,
                 )
                 .await?;
-                return Ok(());
             }
-
-            if let Some(rcx) = complete_card(bot, user_id, course_id, user_state, &card_name).await
-            {
-                let mut progress = arc_deep_clone(STORAGE.get_progress(user_id, course_id));
-                progress.repetition(&card_name, rcx);
-                STORAGE.set_course_progress(user_id, course_id, progress);
-            }
-        }
-        Event::PreviewCard {
-            user_id,
-            course_id,
-            card_name,
-        } => {
-            complete_card(bot, user_id, course_id, user_state, &card_name).await;
-        }
-        Event::Revise { user_id } => {
-            todo!("select from all users deques");
-            // syncronize(user_id, course_id);
-            //
-            // let a = get_progress(user_id)
-            //     .revise(async |id| handle_revise(id, bot.clone(), user_id).await.unwrap())
-            //     .await;
-            // if a.is_none() {
-            //     bot.send_message(user_id, "You don't have card to revise.")
-            //         .await?;
-            // }
-        }
-        Event::ChangeCourseGraph { user_id, course_id } => {
-            let (source, printed_graph) = {
-                let Some(course) = STORAGE.get_course(course_id) else {
-                    bot.send_message(
-                        user_id,
-                        format!("Course with id {} not found.", course_id.0),
-                    )
-                    .await?;
-                    return Ok(());
-                };
-                if course.owner_id != user_id {
-                    bot.send_message(user_id, "It's not your course.").await?;
-                    return Ok(());
-                }
-                let course_graph = &course.structure;
-                let source = course_graph.get_source().to_owned();
-                let graph = course_graph.generate_structure_graph();
-                let printed_graph = tokio::task::spawn_blocking(move || {
-                    graphviz_rust::exec(
-                        graph,
-                        &mut graphviz_rust::printer::PrinterContext::default(),
-                        vec![graphviz_rust::cmd::Format::Jpeg.into()],
-                    )
-                    .context("Failed to run 'dot'")
-                })
-                .await
-                .unwrap()?;
-                (source, printed_graph)
-            };
-
-            if let Some(answer) = get_user_answer_raw(
-                bot.clone(),
-                user_id,
-                vec![
-                    "Current graph:".into(),
-                    TelegramInteraction::PersonalImage(printed_graph),
-                    "Courrent source:".into(),
-                    format!("```\n{source}\n```").into(),
-                    "Print new source:".into(),
-                    TelegramInteraction::UserInput,
-                ],
-                user_state,
-            )
-            .await?
-            {
-                assert_eq!(answer.len(), 6);
-                #[allow(clippy::needless_range_loop)]
-                for i in 0..answer.len() - 1 {
-                    assert!(answer[i].is_empty());
-                }
-                let answer = answer.last().unwrap();
-
-                match CourseGraph::from_str(answer) {
-                    Ok(new_course_graph) => {
-                        let mut new_course = arc_deep_clone(STORAGE.get_course(course_id).unwrap());
-                        new_course.structure = new_course_graph;
-                        send_interactions(
-                            bot,
-                            user_id,
-                            vec!["Course graph changed".into()],
-                            user_state,
-                        )
-                        .await?;
-                    }
-                    Err(err) => {
-                        let err = strip_ansi_escapes::strip_str(err);
-                        send_interactions(
-                            bot,
-                            user_id,
-                            vec![
-                                "Your course graph has this errors:".into(),
-                                format!("```\n{err}\n```").into(),
-                            ],
-                            user_state,
-                        )
-                        .await?;
-                    }
-                }
-            }
-        }
-        Event::ChangeDeque { user_id, course_id } => {
-            let Some(course) = STORAGE.get_course(course_id) else {
-                bot.send_message(
+            Err(err) => {
+                let err = strip_ansi_escapes::strip_str(err);
+                send_interactions(
+                    bot,
                     user_id,
-                    format!("Course with id {} not found.", course_id.0),
+                    vec![
+                        "Your course graph has this errors:".into(),
+                        format!("```\n{err}\n```").into(),
+                    ],
+                    user_state,
                 )
                 .await?;
-                return Ok(());
-            };
-            if course.owner_id != user_id {
-                bot.send_message(user_id, "It's not your course.").await?;
-                return Ok(());
-            }
-            let source = course.tasks.source.clone();
-
-            if let Some(answer) = get_user_answer_raw(
-                bot.clone(),
-                user_id,
-                vec![
-                    "Current source:".into(),
-                    format!("```\n{source}\n```").into(),
-                    "Print new source:".into(),
-                    TelegramInteraction::UserInput,
-                ],
-                user_state,
-            )
-            .await?
-            {
-                assert_eq!(answer.len(), 4);
-                #[allow(clippy::needless_range_loop)]
-                for i in 0..answer.len() - 1 {
-                    assert!(answer[i].is_empty());
-                }
-                let answer = answer.last().unwrap();
-
-                match deque::from_str(answer, true) {
-                    Ok(new_deque) => {
-                        let mut new_course = arc_deep_clone(course);
-                        new_course.tasks = new_deque;
-                        STORAGE.set_course(course_id, new_course);
-                        send_interactions(bot, user_id, vec!["Deque changed".into()], user_state)
-                            .await?;
-                    }
-                    Err(err) => {
-                        send_interactions(
-                            bot,
-                            user_id,
-                            vec![
-                                "Your deque has this errors:".into(),
-                                format!("```\n{err}\n```").into(),
-                            ],
-                            user_state,
-                        )
-                        .await?;
-                    }
-                }
             }
         }
+    }
+    Ok(())
+}
+pub async fn handle_changing_deque(
+    bot: Bot,
+    mut user_state: MutUserState<'_, '_>,
+    user_id: UserId,
+    course_id: CourseId,
+) -> anyhow::Result<()> {
+    let Some(course) = STORAGE.get_course(course_id) else {
+        bot.send_message(
+            user_id,
+            format!("Course with id {} not found.", course_id.0),
+        )
+        .await?;
+        return Ok(());
+    };
+    if course.owner_id != user_id {
+        bot.send_message(user_id, "It's not your course.").await?;
+        return Ok(());
+    }
+    let source = course.tasks.source.clone();
+
+    if let Some(answer) = get_user_answer_raw(
+        bot.clone(),
+        user_id,
+        vec![
+            "Current source:".into(),
+            format!("```\n{source}\n```").into(),
+            "Print new source:".into(),
+            TelegramInteraction::UserInput,
+        ],
+        user_state,
+    )
+    .await?
+    {
+        assert_eq!(answer.len(), 4);
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..answer.len() - 1 {
+            assert!(answer[i].is_empty());
+        }
+        let answer = answer.last().unwrap();
+
+        match deque::from_str(answer, true) {
+            Ok(new_deque) => {
+                let mut new_course = arc_deep_clone(course);
+                new_course.tasks = new_deque;
+                STORAGE.set_course(course_id, new_course);
+                send_interactions(bot, user_id, vec!["Deque changed".into()], user_state).await?;
+            }
+            Err(err) => {
+                send_interactions(
+                    bot,
+                    user_id,
+                    vec![
+                        "Your deque has this errors:".into(),
+                        format!("```\n{err}\n```").into(),
+                    ],
+                    user_state,
+                )
+                .await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn learn_card(
+    bot: Bot,
+    user_id: UserId,
+    course_id: CourseId,
+    user_state: MutUserState<'_, '_>,
+    card_name: String,
+) -> Result<(), anyhow::Error> {
+    syncronize(user_id, course_id);
+    if matches!(
+        STORAGE.get_progress(user_id, course_id)[&card_name],
+        TaskProgress::NotStarted {
+            could_be_learned: false
+        }
+    ) {
+        send_interactions(
+            bot.clone(),
+            user_id,
+            vec!["You should learn all dependencies before starting new card.".into()],
+            user_state,
+        )
+        .await?;
+        return Ok(());
+    }
+    if let Some(rcx) = complete_card(bot, user_id, course_id, user_state, &card_name).await {
+        let mut progress = arc_deep_clone(STORAGE.get_progress(user_id, course_id));
+        progress.repetition(&card_name, rcx);
+        STORAGE.set_course_progress(user_id, course_id, progress);
     }
     Ok(())
 }
@@ -289,12 +290,12 @@ pub fn syncronize(user_id: UserId, course_id: CourseId) {
     //     .detect_recursive_fails(&mut *user_progress);
 }
 
-async fn complete_card(
+pub async fn complete_card(
     bot: Bot,
     user_id: UserId,
     course_id: CourseId,
     mut user_state: MutUserState<'_, '_>,
-    card_name: &String,
+    card_name: &str,
 ) -> Option<RepetitionContext> {
     let Task {
         question,
