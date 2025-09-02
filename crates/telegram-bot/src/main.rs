@@ -401,7 +401,7 @@ async fn handle_main_menu_interaction(
                 structure: CourseGraph::default(),
                 tasks: Deque::default(),
             });
-            bot.send_message(user.id, format!("Course created with id {}", id.0))
+            bot.send_message(user.id, format!("Course created with id {}.", id.0))
                 .await?;
         }
         "/course" => {
@@ -410,8 +410,20 @@ async fn handle_main_menu_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            let course_id = CourseId(tail.parse().unwrap());
-            // FIXME: check course existance
+            let Ok(course_id) = tail.parse() else {
+                bot.send_message(
+                    user.id,
+                    format!("Can't parse course id from this string: '{tail}'."),
+                )
+                .await?;
+                return Ok(());
+            };
+            let course_id = CourseId(course_id);
+            if STORAGE.get_course(course_id).is_none() {
+                bot.send_message(user.id, "Can't find course with this id.")
+                    .await?;
+                return Ok(());
+            }
             user_state.current_screen = Screen::Course(course_id);
             bot.send_message(user.id, "You are now in courses menu.")
                 .await?;
