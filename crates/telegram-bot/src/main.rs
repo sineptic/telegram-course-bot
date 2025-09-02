@@ -343,10 +343,11 @@ async fn send_help_message(
 /course COURSE_ID - Go to course menu
 ";
     let course_help_message = "
+/help — Display all commands
 /exit - Go to main menu
+
 /card CARD_NAME — Try to complete card
 /graph — View course structure
-/help — Display all commands
 /change_course_graph
 /change_deque
 /view_course_graph_source
