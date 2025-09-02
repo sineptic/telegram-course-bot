@@ -403,7 +403,10 @@ async fn handle_main_menu_interaction(
                 .await?;
             send_help_message(bot, user, user_state).await?;
         }
-        _ => todo!(),
+        _ => {
+            // FIXME
+            bot.send_message(user.id, "Command not found!").await?;
+        }
     }
     Ok(())
 }
