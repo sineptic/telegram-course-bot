@@ -82,9 +82,9 @@ mod database {
         pub fn list_user_learned_courses(&self, user_id: UserId) -> Option<Vec<CourseId>> {
             self.inner().list_user_learned_courses(user_id)
         }
-        /// Panics if course doesn't exists
+        /// Panics if user doesn't have progress for this course.
         pub fn get_progress(&self, user_id: UserId, course_id: CourseId) -> Arc<UserProgress> {
-            self.inner().get_progress(user_id, course_id).unwrap()
+            self.inner().get_progress(user_id, course_id)
         }
         /// Returns false if course doesn't exists or already tracked to user
         pub fn add_course_to_user(&self, user_id: UserId, course_id: CourseId) -> bool {
@@ -138,17 +138,14 @@ mod database {
                 .get(&user)
                 .map(|list| list.keys().copied().collect())
         }
-        /// Returns None if there is no course with this id.
-        fn get_progress(&mut self, user: UserId, course: CourseId) -> Option<Arc<UserProgress>> {
-            let def = self.get_course(course)?.default_user_progress();
-            Some(
-                self.progress
-                    .entry(user)
-                    .or_default()
-                    .entry(course)
-                    .or_insert(def.into())
-                    .clone(),
-            )
+        /// Panics if user doesn't have progress for this course.
+        fn get_progress(&mut self, user_id: UserId, course_id: CourseId) -> Arc<UserProgress> {
+            self.progress
+                .entry(user_id)
+                .or_default()
+                .get(&course_id)
+                .unwrap()
+                .clone()
         }
         /// Returns false if course already tracked to user
         fn add_course_to_user(&mut self, user_id: UserId, course_id: CourseId) -> bool {
