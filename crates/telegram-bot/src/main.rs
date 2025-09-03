@@ -542,7 +542,41 @@ async fn handle_learned_course_interaction(
             )
             .await?;
         }
-        _ => todo!(),
+        _ => {
+            match &mut user_state.current_interaction {
+                Some(UserInteraction {
+                    interactions,
+                    current,
+                    current_id,
+                    current_message,
+                    answers,
+                    channel: _,
+                }) => match &interactions[*current] {
+                    TelegramInteraction::UserInput => {
+                        let user_input = message.to_owned();
+
+                        bot.delete_message(user.id, current_message.unwrap())
+                            .await
+                            .log_err();
+
+                        answers.push(user_input);
+                        *current += 1;
+                        *current_id = rand::random();
+
+                        progress_on_user_event(bot, user.id, &mut user_state.current_interaction)
+                            .await
+                            .log_err()
+                            .unwrap();
+                    }
+                    _ => {
+                        bot.send_message(user.id, "Unexpected input").await?;
+                    }
+                },
+                None => {
+                    bot.send_message(user.id, "Command not found!").await?;
+                }
+            };
+        }
     }
     Ok(())
 }
@@ -747,39 +781,41 @@ async fn handle_owned_course_interaction(
             }
         }
         // dialogue handling
-        _ => match &mut user_state.current_interaction {
-            Some(UserInteraction {
-                interactions,
-                current,
-                current_id,
-                current_message,
-                answers,
-                channel: _,
-            }) => match &interactions[*current] {
-                TelegramInteraction::UserInput => {
-                    let user_input = message.to_owned();
+        _ => {
+            match &mut user_state.current_interaction {
+                Some(UserInteraction {
+                    interactions,
+                    current,
+                    current_id,
+                    current_message,
+                    answers,
+                    channel: _,
+                }) => match &interactions[*current] {
+                    TelegramInteraction::UserInput => {
+                        let user_input = message.to_owned();
 
-                    bot.delete_message(user.id, current_message.unwrap())
-                        .await
-                        .log_err();
+                        bot.delete_message(user.id, current_message.unwrap())
+                            .await
+                            .log_err();
 
-                    answers.push(user_input);
-                    *current += 1;
-                    *current_id = rand::random();
+                        answers.push(user_input);
+                        *current += 1;
+                        *current_id = rand::random();
 
-                    progress_on_user_event(bot, user.id, &mut user_state.current_interaction)
-                        .await
-                        .log_err()
-                        .unwrap();
+                        progress_on_user_event(bot, user.id, &mut user_state.current_interaction)
+                            .await
+                            .log_err()
+                            .unwrap();
+                    }
+                    _ => {
+                        bot.send_message(user.id, "Unexpected input").await?;
+                    }
+                },
+                None => {
+                    bot.send_message(user.id, "Command not found!").await?;
                 }
-                _ => {
-                    bot.send_message(user.id, "Unexpected input").await?;
-                }
-            },
-            None => {
-                bot.send_message(user.id, "Command not found!").await?;
-            }
-        },
+            };
+        }
     }
     Ok(())
 }
