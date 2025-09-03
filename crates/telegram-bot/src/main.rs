@@ -76,10 +76,10 @@ mod database {
         pub fn set_course(&self, course_id: CourseId, value: Course) -> bool {
             self.inner().set_course(course_id, value)
         }
-        pub fn select_courses_by_owner(&self, owner: UserId) -> Option<Vec<Arc<Course>>> {
+        pub fn select_courses_by_owner(&self, owner: UserId) -> Vec<CourseId> {
             self.inner().select_courses_by_owner(owner)
         }
-        pub fn list_user_learned_courses(&self, user_id: UserId) -> Option<Vec<CourseId>> {
+        pub fn list_user_learned_courses(&self, user_id: UserId) -> Vec<CourseId> {
             self.inner().list_user_learned_courses(user_id)
         }
         /// Panics if user doesn't have progress for this course.
@@ -125,18 +125,17 @@ mod database {
         fn set_course(&mut self, id: CourseId, content: Course) -> bool {
             self.courses.insert(id, content.into()).is_some()
         }
-        fn select_courses_by_owner(&self, owner: UserId) -> Option<Vec<Arc<Course>>> {
-            self.courses_owners_index.get(&owner).map(|course_ids| {
-                course_ids
-                    .iter()
-                    .map(|course_id| self.courses.get(course_id).unwrap().clone())
-                    .collect::<Vec<_>>()
-            })
+        fn select_courses_by_owner(&self, owner: UserId) -> Vec<CourseId> {
+            self.courses_owners_index
+                .get(&owner)
+                .cloned()
+                .unwrap_or_default()
         }
-        fn list_user_learned_courses(&self, user: UserId) -> Option<Vec<CourseId>> {
+        fn list_user_learned_courses(&self, user: UserId) -> Vec<CourseId> {
             self.progress
                 .get(&user)
                 .map(|list| list.keys().copied().collect())
+                .unwrap_or_default()
         }
         /// Panics if user doesn't have progress for this course.
         fn get_progress(&mut self, user_id: UserId, course_id: CourseId) -> Arc<UserProgress> {
@@ -323,6 +322,7 @@ async fn send_help_message(
 /help - Display all commands
 
 /create_course - Create new course and get it's ID
+/list - List all your courses
 /course COURSE_ID - Go to course menu
 ";
     let owned_course_help_message = "
@@ -427,6 +427,23 @@ async fn handle_main_menu_interaction(
             bot.send_message(user.id, "You are now in course menu.")
                 .await?;
             send_help_message(bot, user, &user_state).await?;
+        }
+        "/list" => {
+            log_user_command(user, "list");
+            let owned_courses = STORAGE.select_courses_by_owner(user.id);
+            let learned_courses = STORAGE.list_user_learned_courses(user.id);
+            let mut message = String::new();
+            message.push_str("# Owned\n");
+            for course in owned_courses {
+                message.push_str(&course.0.to_string());
+                message.push('\n');
+            }
+            message.push_str("# Learned\n");
+            for course in learned_courses {
+                message.push_str(&course.0.to_string());
+                message.push('\n');
+            }
+            bot.send_message(user.id, message).await?;
         }
         _ => {
             // FIXME
