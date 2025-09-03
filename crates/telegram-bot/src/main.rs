@@ -69,8 +69,8 @@ mod database {
         pub fn insert(&self, course: Course) -> CourseId {
             self.inner().insert(course)
         }
-        pub fn get_course(&self, cousre_id: CourseId) -> Option<Arc<Course>> {
-            self.inner().get_course(cousre_id)
+        pub fn get_course(&self, course_id: CourseId) -> Option<Arc<Course>> {
+            self.inner().get_course(course_id)
         }
         /// Returns whether course already exists.
         pub fn set_course(&self, course_id: CourseId, value: Course) -> bool {
@@ -279,9 +279,32 @@ async fn update_handler(bot: Bot, update: Update, user_states: &DashMap<UserId, 
                         .log_err();
                 }
                 Screen::Course(course_id) => {
-                    handle_course_interaction(bot, user, text, course_id, user_state, user_states)
-                        .await
-                        .log_err();
+                    match STORAGE.get_course(course_id).unwrap().owner_id == user.id {
+                        true => {
+                            handle_owned_course_interaction(
+                                bot,
+                                user,
+                                text,
+                                course_id,
+                                user_state,
+                                user_states,
+                            )
+                            .await
+                            .log_err();
+                        }
+                        false => {
+                            handle_learned_course_interaction(
+                                bot,
+                                user,
+                                text,
+                                course_id,
+                                user_state,
+                                user_states,
+                            )
+                            .await
+                            .log_err();
+                        }
+                    };
                 }
             }
         }
@@ -301,14 +324,15 @@ async fn send_help_message(
 ) -> anyhow::Result<()> {
     let main_menu_help_message = "
 /help - Display all commands
+
 /create_course - Create new course and get it's ID
 /course COURSE_ID - Go to course menu
 ";
-    let course_help_message = "
+    let owned_course_help_message = "
 /help — Display all commands
 /exit - Go to main menu
 
-/card CARD_NAME — Try to complete card
+/preview CARD_NAME — Try to complete card
 /graph — View course structure
 /change_course_graph
 /change_deque
@@ -316,11 +340,24 @@ async fn send_help_message(
 /view_deque_source
 /view_course_errors
 ";
+    let learned_course_help_message = "
+/help — Display all commands
+/exit - Go to main menu
+
+/card CARD_NAME — Try to complete card
+/graph — View course structure
+";
+
     bot.send_message(
         user.id,
         match user_state.current_screen {
             Screen::Main => main_menu_help_message,
-            Screen::Course(_course_id) => course_help_message,
+            Screen::Course(course_id) => {
+                match STORAGE.get_course(course_id).unwrap().owner_id == user.id {
+                    true => owned_course_help_message,
+                    false => learned_course_help_message,
+                }
+            }
         },
     )
     .await?;
@@ -402,7 +439,7 @@ async fn handle_main_menu_interaction(
     Ok(())
 }
 
-async fn handle_course_interaction(
+async fn handle_learned_course_interaction(
     bot: Bot,
     user: &User,
     message: &str,
@@ -424,6 +461,101 @@ async fn handle_course_interaction(
             send_help_message(bot, user, &user_state).await?;
         }
         "/card" => {
+            log_user_command(user, "card");
+            if tail.contains(" ") {
+                bot.send_message(user.id, "Error: Card name should not contain spaces.")
+                    .await?;
+                return Ok(());
+            }
+            if tail.is_empty() {
+                bot.send_message(
+                    user.id,
+                    "Error: You should provide card name, you want to learn.",
+                )
+                .await?;
+                return Ok(());
+            }
+            log::info!(
+                "user {}({}) sends card '{tail}' command",
+                user.username.clone().unwrap_or("unknown".into()),
+                user.id
+            );
+            complete_card(bot, user.id, course_id, user_state, user_states, tail).await;
+        }
+        "/graph" => {
+            log_user_command(user, "graph");
+            if !tail.is_empty() {
+                bot.send_message(user.id, "graph command doesn't expect any arguments.")
+                    .await?;
+                return Ok(());
+            }
+            syncronize(user.id, course_id);
+
+            let Some(course) = STORAGE.get_course(course_id) else {
+                bot.send_message(
+                    user.id,
+                    format!("Course with id {} not found.", course_id.0),
+                )
+                .await?;
+                return Ok(());
+            };
+            let mut graph = course.structure.generate_structure_graph();
+
+            STORAGE
+                .get_progress(user.id, course_id)
+                .generate_stmts()
+                .into_iter()
+                .for_each(|stmt| {
+                    graph.add_stmt(stmt);
+                });
+
+            send_interactions(
+                bot,
+                user.id,
+                [TelegramInteraction::PersonalImage(
+                    tokio::task::spawn_blocking(move || {
+                        graphviz_rust::exec(
+                            graph,
+                            &mut PrinterContext::default(),
+                            Vec::from([Format::Jpeg.into()]),
+                        )
+                        .context("Failed to run 'dot'")
+                    })
+                    .await
+                    .unwrap()?,
+                )],
+                user_state,
+            )
+            .await?;
+        }
+        _ => todo!(),
+    }
+    Ok(())
+}
+
+async fn handle_owned_course_interaction(
+    bot: Bot,
+    user: &User,
+    message: &str,
+    course_id: CourseId,
+    mut user_state: MutUserState<'_>,
+    user_states: &DashMap<UserId, UserState>,
+) -> anyhow::Result<()> {
+    let (first_word, tail) = message.trim().split_once(" ").unwrap_or((message, ""));
+    match first_word {
+        "/help" => {
+            log_user_command(user, "help");
+            send_help_message(bot, user, &user_state).await?;
+        }
+        "/exit" => {
+            log_user_command(user, "exit");
+            user_state.current_screen = Screen::Main;
+            bot.send_message(user.id, "You are now in main menu.")
+                .await?;
+            send_help_message(bot, user, &user_state).await?;
+        }
+        "/preview" => {
+            log_user_command(user, "preview");
             if tail.contains(" ") {
                 bot.send_message(user.id, "Error: Card name should not contain spaces.")
                     .await?;
