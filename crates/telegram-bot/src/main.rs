@@ -79,8 +79,8 @@ mod database {
         pub fn select_courses_by_owner(&self, owner: UserId) -> Option<Vec<Arc<Course>>> {
             self.inner().select_courses_by_owner(owner)
         }
-        pub fn list_user_courses(&self, user_id: UserId) -> Option<Vec<CourseId>> {
-            self.inner().list_user_courses(user_id)
+        pub fn list_user_learned_courses(&self, user_id: UserId) -> Option<Vec<CourseId>> {
+            self.inner().list_user_learned_courses(user_id)
         }
         /// Panics if course doesn't exists
         pub fn get_progress(&self, user_id: UserId, course_id: CourseId) -> Arc<UserProgress> {
@@ -133,7 +133,7 @@ mod database {
                     .collect::<Vec<_>>()
             })
         }
-        fn list_user_courses(&self, user: UserId) -> Option<Vec<CourseId>> {
+        fn list_user_learned_courses(&self, user: UserId) -> Option<Vec<CourseId>> {
             self.progress
                 .get(&user)
                 .map(|list| list.keys().copied().collect())
@@ -150,18 +150,19 @@ mod database {
                     .clone(),
             )
         }
-        /// Returns false if course doesn't exists or already tracked to user
+        /// Returns false if course already tracked to user
         fn add_course_to_user(&mut self, user_id: UserId, course_id: CourseId) -> bool {
-            let Some(course) = self.get_course(course_id) else {
-                return false;
-            };
+            let course = self.get_course(course_id).unwrap();
+            if course.owner_id == user_id {
+                return true;
+            }
             let entry = self.progress.entry(user_id).or_default().entry(course_id);
             match entry {
                 Entry::Vacant(vacant_entry) => {
                     vacant_entry.insert(Arc::new(course.default_user_progress()));
                     true
                 }
-                Entry::Occupied(occupied_entry) => false,
+                Entry::Occupied(_occupied_entry) => false,
             }
         }
         /// Returns None if this progress doesn't exists.
@@ -388,6 +389,7 @@ async fn handle_main_menu_interaction(
                 return Ok(());
             }
             user_state.current_screen = Screen::Course(course_id);
+            STORAGE.add_course_to_user(user.id, course_id);
             bot.send_message(user.id, "You are now in course menu.")
                 .await?;
             send_help_message(bot, user, &user_state).await?;
