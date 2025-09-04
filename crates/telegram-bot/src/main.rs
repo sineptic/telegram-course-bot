@@ -641,15 +641,7 @@ async fn handle_owned_course_interaction(
                 .await?;
                 return Ok(());
             };
-            let mut graph = course.structure.generate_structure_graph();
-
-            STORAGE
-                .get_progress(user.id, course_id)
-                .generate_stmts()
-                .into_iter()
-                .for_each(|stmt| {
-                    graph.add_stmt(stmt);
-                });
+            let graph = course.structure.generate_structure_graph();
 
             send_interactions(
                 bot,
