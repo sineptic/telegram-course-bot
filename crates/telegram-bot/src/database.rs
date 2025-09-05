@@ -2,12 +2,12 @@ pub static STORAGE: LazyLock<CoursesWrapper> = LazyLock::new(|| CoursesWrapper {
     inner: Mutex::new(Courses {
         next_course_id: 0,
         courses: HashMap::new(),
-        progress: HashMap::new(),
+        progress: Vec::new(),
     }),
 });
 
 use std::{
-    collections::{HashMap, hash_map::Entry},
+    collections::HashMap,
     sync::{LazyLock, Mutex, MutexGuard},
 };
 
@@ -68,10 +68,17 @@ impl CoursesWrapper {
             .set_course_progress(user_id, course_id, progress)
     }
 }
+
+struct ProgressTableRow {
+    user_id: UserId,
+    course_id: CourseId,
+    progress: UserProgress,
+}
+
 struct Courses {
     next_course_id: u64,
     courses: HashMap<CourseId, Course>,
-    progress: HashMap<UserId, HashMap<CourseId, UserProgress>>,
+    progress: Vec<ProgressTableRow>,
 }
 impl Courses {
     fn insert(&mut self, course: Course) -> CourseId {
@@ -83,7 +90,6 @@ impl Courses {
     fn get_course(&self, id: CourseId) -> Option<Course> {
         self.courses.get(&id).cloned()
     }
-    /// Returns whether course already exists.
     fn set_course(&mut self, id: CourseId, content: Course) {
         self.courses.insert(id, content);
     }
@@ -96,30 +102,32 @@ impl Courses {
     }
     fn list_user_learned_courses(&self, user: UserId) -> Vec<CourseId> {
         self.progress
-            .get(&user)
-            .map(|list| list.keys().copied().collect())
-            .unwrap_or_default()
+            .iter()
+            .filter(|row| row.user_id == user)
+            .map(|row| row.course_id)
+            .collect()
     }
     /// Panics if user doesn't have progress for this course.
     fn get_progress(&mut self, user_id: UserId, course_id: CourseId) -> UserProgress {
         self.progress
-            .entry(user_id)
-            .or_default()
-            .get(&course_id)
+            .iter()
+            .find(|row| row.user_id == user_id && row.course_id == course_id)
+            .map(|row| row.progress.clone())
             .unwrap()
-            .clone()
     }
     fn add_course_to_user(&mut self, user_id: UserId, course_id: CourseId) {
         let course = self.get_course(course_id).unwrap();
-        if course.owner_id == user_id {
-            return;
-        }
-        let entry = self.progress.entry(user_id).or_default().entry(course_id);
-        match entry {
-            Entry::Vacant(vacant_entry) => {
-                vacant_entry.insert(course.default_user_progress());
-            }
-            Entry::Occupied(_occupied_entry) => {}
+        if course.owner_id != user_id
+            && !self
+                .progress
+                .iter()
+                .any(|row| row.user_id == user_id && row.course_id == course_id)
+        {
+            self.progress.push(ProgressTableRow {
+                user_id,
+                course_id,
+                progress: course.default_user_progress(),
+            });
         }
     }
     fn set_course_progress(
@@ -128,12 +136,11 @@ impl Courses {
         course_id: CourseId,
         progress: UserProgress,
     ) {
-        *self
-            .progress
-            .get_mut(&user_id)
+        self.progress
+            .iter_mut()
+            .find(|row| row.user_id == user_id && row.course_id == course_id)
             .expect("You should run `add_course_to_user` before this function")
-            .get_mut(&course_id)
-            .expect("You should run `add_course_to_user` before this function") = progress;
+            .progress = progress;
     }
 }
 impl Course {
