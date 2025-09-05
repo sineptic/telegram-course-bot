@@ -682,7 +682,6 @@ async fn handle_owned_course_interaction(
                     .await?;
                 return Ok(());
             }
-            syncronize(user.id, course_id);
 
             let Some(course) = STORAGE.get_course(course_id) else {
                 bot.send_message(
