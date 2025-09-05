@@ -1,6 +1,10 @@
 use std::collections::BTreeMap;
 
 use course_graph::graph::CourseGraph;
+use serde::{
+    Deserialize, Serialize,
+    de::{Error, Visitor},
+};
 
 use super::{Card, Task};
 use crate::check;
@@ -74,5 +78,36 @@ impl Default for Deque {
             );
         }
         deque
+    }
+}
+
+impl Serialize for Deque {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.source)
+    }
+}
+struct DequeVisitor;
+impl Visitor<'_> for DequeVisitor {
+    type Value = Deque;
+
+    fn expecting(&self, _formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        todo!()
+    }
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        from_str(v, true).map_err(Error::custom)
+    }
+}
+impl<'de> Deserialize<'de> for Deque {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(DequeVisitor)
     }
 }

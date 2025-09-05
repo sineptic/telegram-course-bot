@@ -2,6 +2,10 @@ use std::{collections::HashMap, fmt::Debug, str::FromStr};
 
 use dot_structures::{Graph, Node, Stmt};
 use graphviz_rust::attributes::NodeAttributes;
+use serde::{
+    Deserialize, Serialize,
+    de::{Error, Visitor},
+};
 
 use crate::card::CardNode;
 
@@ -117,5 +121,36 @@ impl Default for CourseGraph {
             println!("{err}");
             panic!("graph parsing error");
         })
+    }
+}
+
+impl Serialize for CourseGraph {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.text)
+    }
+}
+struct CourseGraphVisitor;
+impl Visitor<'_> for CourseGraphVisitor {
+    type Value = CourseGraph;
+
+    fn expecting(&self, _formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        todo!()
+    }
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: Error,
+    {
+        CourseGraph::from_str(v).map_err(Error::custom)
+    }
+}
+impl<'de> Deserialize<'de> for CourseGraph {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(CourseGraphVisitor)
     }
 }

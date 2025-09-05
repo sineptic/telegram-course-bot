@@ -48,13 +48,14 @@ mod database {
     };
 
     use course_graph::graph::CourseGraph;
+    use serde::{Deserialize, Serialize};
     use teloxide_core::types::UserId;
 
     use crate::{event_handler::progress_store::UserProgress, interaction_types::deque::Deque};
 
     #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash, Debug)]
     pub struct CourseId(pub u64);
-    #[derive(Clone)]
+    #[derive(Clone, Serialize, Deserialize)]
     pub struct Course {
         pub owner_id: UserId,
         pub structure: CourseGraph,
