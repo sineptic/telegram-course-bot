@@ -339,7 +339,10 @@ async fn handle_learned_course_interaction(
                     [&card_name.to_owned()]
                     .meaningful_repetitions;
                 if (meaningful_repetitions as usize) < tasks_list.len() {
-                    tasks_list[meaningful_repetitions as usize].clone()
+                    tasks_list[((meaningful_repetitions as usize)
+                        + usize::try_from(user.id.0).unwrap() % tasks_list.len())
+                        % tasks_list.len()]
+                    .clone()
                 } else {
                     interaction_types::card::random_task(tasks, rand::rng()).clone()
                 }
