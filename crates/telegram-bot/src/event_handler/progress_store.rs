@@ -101,21 +101,6 @@ impl UserProgress {
             .add_repetition(repetition)
             .expect("HINT: you cant revice card that not started and have bad known(for user) dependencies")
     }
-    pub async fn revise(
-        &mut self,
-        check_knowledge: impl AsyncFnOnce(&Id) -> RepetitionContext,
-    ) -> Option<()> {
-        if let Some((id, task)) = self
-            .tasks
-            .iter_mut()
-            .find(|(_id, task)| task.progress == TaskProgress::Failed)
-        {
-            task.add_repetition(check_knowledge(id).await).unwrap();
-            Some(())
-        } else {
-            None
-        }
-    }
 }
 impl<'a> std::ops::Index<&'a Id> for UserProgress {
     type Output = TaskProgress;

@@ -1,7 +1,10 @@
 use std::cmp::max;
 
 use anyhow::Context;
-use course_graph::{graph::CourseGraph, progress_store::TaskProgressStoreExt};
+use course_graph::{
+    graph::CourseGraph,
+    progress_store::{TaskProgress, TaskProgressStoreExt},
+};
 use dashmap::DashMap;
 use graphviz_rust::{cmd::Format, printer::PrinterContext};
 use teloxide_core::{
@@ -21,7 +24,8 @@ use database::*;
 
 use crate::{
     event_handler::{
-        complete_card, handle_changing_course_graph, handle_changing_deque, syncronize,
+        arc_deep_clone, complete_card, handle_changing_course_graph, handle_changing_deque,
+        syncronize,
     },
     handlers::{callback_handler, progress_on_user_event, send_interactions},
     interaction_types::{TelegramInteraction, deque::Deque},
@@ -489,14 +493,17 @@ async fn handle_learned_course_interaction(
                 .await?;
                 return Ok(());
             }
+            let card_name = tail;
             log::info!(
-                "user {}({}) sends card '{tail}' command",
+                "user {}({}) sends card '{card_name}' command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
+
+            syncronize(user.id, course_id);
             let task = {
                 let course = STORAGE.get_course(course_id).unwrap();
-                let Some(tasks) = course.tasks.tasks.get(tail) else {
+                let Some(tasks) = course.tasks.tasks.get(card_name) else {
                     send_interactions(
                         bot,
                         user.id,
@@ -508,7 +515,23 @@ async fn handle_learned_course_interaction(
                 };
                 interaction_types::card::random_task(tasks, rand::rng()).clone()
             };
-            complete_card(bot, user.id, task, user_state, user_states).await;
+            if matches!(
+                STORAGE.get_progress(user.id, course_id)[&card_name.to_owned()],
+                TaskProgress::NotStarted {
+                    could_be_learned: false
+                }
+            ) {
+                bot.send_message(
+                    user.id,
+                    "You should learn all dependencies before learning this card.",
+                )
+                .await?;
+                return Ok(());
+            }
+            let rcx = complete_card(bot, user.id, task, user_state, user_states).await;
+            let mut progress = arc_deep_clone(STORAGE.get_progress(user.id, course_id));
+            progress.repetition(&card_name.to_owned(), rcx);
+            STORAGE.set_course_progress(user.id, course_id, progress);
         }
         "/graph" => {
             log_user_command(user, "graph");

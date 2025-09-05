@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::Context;
 use chrono::{DateTime, Local};
-use course_graph::{graph::CourseGraph, progress_store::TaskProgress};
+use course_graph::graph::CourseGraph;
 use dashmap::DashMap;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide_core::{Bot, prelude::Requester, types::UserId};
@@ -71,24 +71,6 @@ fn now() -> DateTime<Local> {
     let now = Local::now();
     let diff = now - **START_TIME;
     **START_TIME + diff * 3600
-}
-
-pub async fn handle_revise(
-    _bot: Bot,
-    mut _user_state: MutUserState<'_>,
-    _user_id: UserId,
-    _course_id: CourseId,
-) {
-    todo!();
-    // syncronize(user_id, course_id);
-    //
-    // let a = get_progress(user_id)
-    //     .revise(async |id| handle_revise(id, bot.clone(), user_id).await.unwrap())
-    //     .await;
-    // if a.is_none() {
-    //     bot.send_message(user_id, "You don't have card to revise.")
-    //         .await?;
-    // }
 }
 
 pub async fn handle_changing_course_graph(
@@ -227,49 +209,20 @@ pub async fn handle_changing_deque(
     Ok(())
 }
 
-// async fn learn_card(
-//     bot: Bot,
-//     user_id: UserId,
-//     course_id: CourseId,
-//     user_state: MutUserState<'_>,
-//     user_states: &DashMap<UserId, UserState>,
-//     card_name: String,
-// ) -> Result<(), anyhow::Error> {
-//     syncronize(user_id, course_id);
-//     if matches!(
-//         STORAGE.get_progress(user_id, course_id)[&card_name],
-//         TaskProgress::NotStarted {
-//             could_be_learned: false
-//         }
-//     ) {
-//         send_interactions(
-//             bot.clone(),
-//             user_id,
-//             vec!["You should learn all dependencies before starting new card.".into()],
-//             user_state,
-//         )
-//         .await?;
-//         return Ok(());
-//     }
-//     if let Some(rcx) =
-//         complete_card(bot, user_id, course_id, user_state, user_states, &card_name).await
-//     {
-//         let mut progress = arc_deep_clone(STORAGE.get_progress(user_id, course_id));
-//         progress.repetition(&card_name, rcx);
-//         STORAGE.set_course_progress(user_id, course_id, progress);
-//     }
-//     Ok(())
-// }
-
-fn arc_deep_clone<T: Clone>(arc: Arc<T>) -> T {
+pub fn arc_deep_clone<T: Clone>(arc: Arc<T>) -> T {
     let mut new_value = arc.clone();
     Arc::make_mut(&mut new_value);
     Arc::into_inner(new_value).unwrap()
 }
 
-pub fn syncronize(_user_id: UserId, _course_id: CourseId) {
-    return;
-    todo!();
+pub fn syncronize(user_id: UserId, course_id: CourseId) {
+    let mut progress = arc_deep_clone(STORAGE.get_progress(user_id, course_id));
+    progress.syncronize(now().into());
+    STORAGE
+        .get_course(course_id)
+        .unwrap()
+        .structure
+        .detect_recursive_fails(&mut progress);
     // let mut user_progress = get_progress(course_id, user_id);
     // user_progress.syncronize(now().into());
     // COURSES_STORAGE.get_course(course_id).unwrap().structure;
