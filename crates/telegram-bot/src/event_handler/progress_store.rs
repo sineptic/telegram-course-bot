@@ -13,6 +13,7 @@ type Id = String;
 pub struct Task {
     progress: TaskProgress,
     level: Level,
+    pub(crate) meaningful_repetitions: u32,
 }
 impl Task {
     fn syncronize(&mut self, fsrs: &FSRS, retrievability_goal: f32, now: SystemTime) {
@@ -59,13 +60,20 @@ impl Task {
             }
         }
     }
-    fn add_repetition(&mut self, repetition: RepetitionContext) -> Result<(), ()> {
+    fn add_repetition(
+        &mut self,
+        repetition: RepetitionContext,
+        meaningful_repetition: bool,
+    ) -> Result<(), ()> {
         match self.progress {
             TaskProgress::NotStarted {
                 could_be_learned: false,
             } => Err(()),
             _ => {
                 self.level.add_repetition(repetition);
+                if meaningful_repetition {
+                    self.meaningful_repetitions += 1;
+                }
                 Ok(())
             }
         }
@@ -76,7 +84,7 @@ impl Task {
 pub struct UserProgress {
     weights: Weights,
     desired_retention: f32,
-    tasks: HashMap<Id, Task>,
+    pub(crate) tasks: HashMap<Id, Task>,
 }
 impl Default for UserProgress {
     fn default() -> Self {
@@ -94,11 +102,16 @@ impl UserProgress {
             t.syncronize(&fsrs, self.desired_retention, now);
         });
     }
-    pub fn repetition(&mut self, id: &Id, repetition: RepetitionContext) {
+    pub fn repetition(
+        &mut self,
+        id: &Id,
+        repetition: RepetitionContext,
+        meaningful_repetition: bool,
+    ) {
         self.tasks
             .get_mut(id)
             .unwrap()
-            .add_repetition(repetition)
+            .add_repetition(repetition, meaningful_repetition)
             .expect("HINT: you cant revice card that not started and have bad known(for user) dependencies")
     }
 }

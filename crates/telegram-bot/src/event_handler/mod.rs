@@ -232,7 +232,7 @@ pub async fn complete_card(
     }: Task,
     user_state: MutUserState<'_>,
     user_states: &DashMap<UserId, UserState>,
-) -> RepetitionContext {
+) -> (RepetitionContext, bool) {
     let Some(user_answer) = get_card_answer(
         bot.clone(),
         user_id,
@@ -243,17 +243,23 @@ pub async fn complete_card(
     .await
     .log_err()
     .unwrap() else {
-        return RepetitionContext {
-            quality: Quality::Again,
-            review_time: now(),
-        };
+        return (
+            RepetitionContext {
+                quality: Quality::Again,
+                review_time: now(),
+            },
+            false,
+        );
     };
     if user_answer == options[answer] {
         bot.send_message(user_id, "Correct!").await.log_err();
-        RepetitionContext {
-            quality: Quality::Good,
-            review_time: now(),
-        }
+        (
+            RepetitionContext {
+                quality: Quality::Good,
+                review_time: now(),
+            },
+            true,
+        )
     } else {
         let mut messages = Vec::new();
         messages.push(TelegramInteraction::Text(
@@ -270,9 +276,12 @@ pub async fn complete_card(
         send_interactions(bot.clone(), user_id, messages, user_state)
             .await
             .log_err();
-        RepetitionContext {
-            quality: Quality::Again,
-            review_time: now(),
-        }
+        (
+            RepetitionContext {
+                quality: Quality::Again,
+                review_time: now(),
+            },
+            true,
+        )
     }
 }

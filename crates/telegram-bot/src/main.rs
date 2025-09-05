@@ -334,7 +334,15 @@ async fn handle_learned_course_interaction(
                     .await?;
                     return Ok(());
                 };
-                interaction_types::card::random_task(tasks, rand::rng()).clone()
+                let tasks_list = tasks.values().collect::<Vec<_>>();
+                let meaningful_repetitions = STORAGE.get_progress(user.id, course_id).tasks
+                    [&card_name.to_owned()]
+                    .meaningful_repetitions;
+                if (meaningful_repetitions as usize) < tasks_list.len() {
+                    tasks_list[meaningful_repetitions as usize].clone()
+                } else {
+                    interaction_types::card::random_task(tasks, rand::rng()).clone()
+                }
             };
             if matches!(
                 STORAGE.get_progress(user.id, course_id)[&card_name.to_owned()],
@@ -349,9 +357,10 @@ async fn handle_learned_course_interaction(
                 .await?;
                 return Ok(());
             }
-            let rcx = complete_card(bot, user.id, task, user_state, user_states).await;
+            let (rcx, is_meaningful) =
+                complete_card(bot, user.id, task, user_state, user_states).await;
             let mut progress = STORAGE.get_progress(user.id, course_id);
-            progress.repetition(&card_name.to_owned(), rcx);
+            progress.repetition(&card_name.to_owned(), rcx, is_meaningful);
             STORAGE.set_course_progress(user.id, course_id, progress);
         }
         "/graph" => {
