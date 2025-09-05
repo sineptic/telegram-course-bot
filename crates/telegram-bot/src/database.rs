@@ -1,14 +1,13 @@
 pub static STORAGE: LazyLock<CoursesWrapper> = LazyLock::new(|| CoursesWrapper {
     inner: Mutex::new(Courses {
         next_course_id: 0,
-        courses: BTreeMap::new(),
-        courses_owners_index: BTreeMap::new(),
+        courses: HashMap::new(),
         progress: HashMap::new(),
     }),
 });
 
 use std::{
-    collections::{BTreeMap, HashMap, btree_map::Entry},
+    collections::{HashMap, hash_map::Entry},
     sync::{LazyLock, Mutex, MutexGuard},
 };
 
@@ -42,8 +41,7 @@ impl CoursesWrapper {
     pub fn get_course(&self, course_id: CourseId) -> Option<Course> {
         self.inner().get_course(course_id)
     }
-    /// Returns whether course already exists.
-    pub fn set_course(&self, course_id: CourseId, value: Course) -> bool {
+    pub fn set_course(&self, course_id: CourseId, value: Course) {
         self.inner().set_course(course_id, value)
     }
     pub fn select_courses_by_owner(&self, owner: UserId) -> Vec<CourseId> {
@@ -56,8 +54,7 @@ impl CoursesWrapper {
     pub fn get_progress(&self, user_id: UserId, course_id: CourseId) -> UserProgress {
         self.inner().get_progress(user_id, course_id)
     }
-    /// Returns false if course doesn't exists or already tracked to user
-    pub fn add_course_to_user(&self, user_id: UserId, course_id: CourseId) -> bool {
+    pub fn add_course_to_user(&self, user_id: UserId, course_id: CourseId) {
         self.inner().add_course_to_user(user_id, course_id)
     }
     /// Returns None if this progress doesn't exists.
@@ -66,25 +63,20 @@ impl CoursesWrapper {
         user_id: UserId,
         course_id: CourseId,
         progress: UserProgress,
-    ) -> Option<()> {
+    ) {
         self.inner()
             .set_course_progress(user_id, course_id, progress)
     }
 }
 struct Courses {
     next_course_id: u64,
-    courses: BTreeMap<CourseId, Course>,
-    courses_owners_index: BTreeMap<UserId, Vec<CourseId>>,
-    progress: HashMap<UserId, BTreeMap<CourseId, UserProgress>>,
+    courses: HashMap<CourseId, Course>,
+    progress: HashMap<UserId, HashMap<CourseId, UserProgress>>,
 }
 impl Courses {
     fn insert(&mut self, course: Course) -> CourseId {
         let course_id = CourseId(self.next_course_id);
         self.next_course_id += 1;
-        self.courses_owners_index
-            .entry(course.owner_id)
-            .or_default()
-            .push(course_id);
         self.courses.insert(course_id, course);
         course_id
     }
@@ -92,14 +84,15 @@ impl Courses {
         self.courses.get(&id).cloned()
     }
     /// Returns whether course already exists.
-    fn set_course(&mut self, id: CourseId, content: Course) -> bool {
-        self.courses.insert(id, content).is_some()
+    fn set_course(&mut self, id: CourseId, content: Course) {
+        self.courses.insert(id, content);
     }
     fn select_courses_by_owner(&self, owner: UserId) -> Vec<CourseId> {
-        self.courses_owners_index
-            .get(&owner)
-            .cloned()
-            .unwrap_or_default()
+        self.courses
+            .iter()
+            .filter(|(_, course)| course.owner_id == owner)
+            .map(|(&course_id, _)| course_id)
+            .collect()
     }
     fn list_user_learned_courses(&self, user: UserId) -> Vec<CourseId> {
         self.progress
@@ -116,30 +109,31 @@ impl Courses {
             .unwrap()
             .clone()
     }
-    /// Returns false if course already tracked to user
-    fn add_course_to_user(&mut self, user_id: UserId, course_id: CourseId) -> bool {
+    fn add_course_to_user(&mut self, user_id: UserId, course_id: CourseId) {
         let course = self.get_course(course_id).unwrap();
         if course.owner_id == user_id {
-            return true;
+            return;
         }
         let entry = self.progress.entry(user_id).or_default().entry(course_id);
         match entry {
             Entry::Vacant(vacant_entry) => {
                 vacant_entry.insert(course.default_user_progress());
-                true
             }
-            Entry::Occupied(_occupied_entry) => false,
+            Entry::Occupied(_occupied_entry) => {}
         }
     }
-    /// Returns None if this progress doesn't exists.
     fn set_course_progress(
         &mut self,
         user_id: UserId,
         course_id: CourseId,
         progress: UserProgress,
-    ) -> Option<()> {
-        *self.progress.get_mut(&user_id)?.get_mut(&course_id)? = progress;
-        Some(())
+    ) {
+        *self
+            .progress
+            .get_mut(&user_id)
+            .expect("You should run `add_course_to_user` before this function")
+            .get_mut(&course_id)
+            .expect("You should run `add_course_to_user` before this function") = progress;
     }
 }
 impl Course {
