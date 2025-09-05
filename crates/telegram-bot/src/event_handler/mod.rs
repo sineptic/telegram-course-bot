@@ -293,29 +293,21 @@ pub async fn complete_card(
         explanation,
     } = {
         let course = STORAGE.get_course(course_id).unwrap();
-        card::random_task(
-            {
-                if let Some(x) = course.tasks.tasks.get(card_name) {
-                    x
-                } else {
-                    send_interactions(
-                        bot,
-                        user_id,
-                        vec!["Card with this name not found".into()],
-                        user_state,
-                    )
-                    .await
-                    .log_err();
-                    return None;
-                }
-            },
-            rand::rng(),
-        )
-        .clone()
+        let Some(tasks) = course.tasks.tasks.get(card_name) else {
+            send_interactions(
+                bot,
+                user_id,
+                vec!["Card with this name not found".into()],
+                user_state,
+            )
+            .await
+            .log_err();
+            return None;
+        };
+        card::random_task(tasks, rand::rng()).clone()
     };
 
-    let mut correct = false;
-    if let Some(user_answer) = get_card_answer(
+    let Some(user_answer) = get_card_answer(
         bot.clone(),
         user_id,
         question.clone(),
@@ -324,41 +316,33 @@ pub async fn complete_card(
     )
     .await
     .log_err()
-    .unwrap()
-    {
-        if user_answer == options[answer] {
-            correct = true;
-            bot.send_message(user_id, "Correct!").await.log_err();
-        } else {
-            bot.send_message(user_id, format!("Wrong. Answer is {}", options[answer]))
-                .await
-                .log_err();
-            if let Some(explanation) = explanation {
-                let user_state = user_states.get_mut(&user_id).unwrap();
-                send_interactions(
-                    bot.clone(),
-                    user_id,
-                    explanation
-                        .iter()
-                        .map(|x| x.clone().into())
-                        .collect::<Vec<TelegramInteraction>>(),
-                    user_state,
-                )
-                .await
-                .log_err();
-            }
-        }
-
-        let quality = if correct {
-            Quality::Good
-        } else {
-            Quality::Again
-        };
+    .unwrap() else {
+        return Some(RepetitionContext {
+            quality: Quality::Again,
+            review_time: now(),
+        });
+    };
+    if user_answer == options[answer] {
+        bot.send_message(user_id, "Correct!").await.log_err();
         Some(RepetitionContext {
-            quality,
+            quality: Quality::Good,
             review_time: now(),
         })
     } else {
+        bot.send_message(user_id, format!("Wrong. Answer is {}", options[answer]))
+            .await
+            .log_err();
+        if let Some(explanation) = explanation {
+            let user_state = user_states.get_mut(&user_id).unwrap();
+            send_interactions(
+                bot.clone(),
+                user_id,
+                explanation.iter().cloned().map(TelegramInteraction::from),
+                user_state,
+            )
+            .await
+            .log_err();
+        }
         Some(RepetitionContext {
             quality: Quality::Again,
             review_time: now(),
