@@ -1,7 +1,4 @@
-use std::{
-    str::FromStr,
-    sync::{Arc, LazyLock},
-};
+use std::{str::FromStr, sync::LazyLock};
 
 use anyhow::Context;
 use chrono::{DateTime, Local};
@@ -132,7 +129,7 @@ pub async fn handle_changing_course_graph(
 
         match CourseGraph::from_str(answer) {
             Ok(new_course_graph) => {
-                let mut new_course = arc_deep_clone(STORAGE.get_course(course_id).unwrap());
+                let mut new_course = STORAGE.get_course(course_id).unwrap();
                 new_course.structure = new_course_graph;
                 STORAGE.set_course(course_id, new_course);
                 bot.send_message(user_id, "Course graph changed.").await?;
@@ -191,7 +188,7 @@ pub async fn handle_changing_deque(
 
         match deque::from_str(answer, true) {
             Ok(new_deque) => {
-                let mut new_course = arc_deep_clone(course);
+                let mut new_course = course;
                 new_course.tasks = new_deque;
                 STORAGE.set_course(course_id, new_course);
                 bot.send_message(user_id, "Deque changed.").await?;
@@ -208,14 +205,8 @@ pub async fn handle_changing_deque(
     Ok(())
 }
 
-pub fn arc_deep_clone<T: Clone>(arc: Arc<T>) -> T {
-    let mut new_value = arc.clone();
-    Arc::make_mut(&mut new_value);
-    Arc::into_inner(new_value).unwrap()
-}
-
 pub fn syncronize(user_id: UserId, course_id: CourseId) {
-    let mut progress = arc_deep_clone(STORAGE.get_progress(user_id, course_id));
+    let mut progress = STORAGE.get_progress(user_id, course_id);
     progress.syncronize(now().into());
     STORAGE
         .get_course(course_id)

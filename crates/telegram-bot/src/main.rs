@@ -24,8 +24,7 @@ use database::*;
 
 use crate::{
     event_handler::{
-        arc_deep_clone, complete_card, handle_changing_course_graph, handle_changing_deque,
-        syncronize,
+        complete_card, handle_changing_course_graph, handle_changing_deque, syncronize,
     },
     handlers::{callback_handler, progress_on_user_event, send_interactions},
     interaction_types::{TelegramInteraction, deque::Deque},
@@ -44,7 +43,7 @@ mod database {
 
     use std::{
         collections::{BTreeMap, HashMap, btree_map::Entry},
-        sync::{Arc, LazyLock, Mutex, MutexGuard},
+        sync::{LazyLock, Mutex, MutexGuard},
     };
 
     use course_graph::graph::CourseGraph;
@@ -74,7 +73,7 @@ mod database {
         pub fn insert(&self, course: Course) -> CourseId {
             self.inner().insert(course)
         }
-        pub fn get_course(&self, course_id: CourseId) -> Option<Arc<Course>> {
+        pub fn get_course(&self, course_id: CourseId) -> Option<Course> {
             self.inner().get_course(course_id)
         }
         /// Returns whether course already exists.
@@ -88,7 +87,7 @@ mod database {
             self.inner().list_user_learned_courses(user_id)
         }
         /// Panics if user doesn't have progress for this course.
-        pub fn get_progress(&self, user_id: UserId, course_id: CourseId) -> Arc<UserProgress> {
+        pub fn get_progress(&self, user_id: UserId, course_id: CourseId) -> UserProgress {
             self.inner().get_progress(user_id, course_id)
         }
         /// Returns false if course doesn't exists or already tracked to user
@@ -108,9 +107,9 @@ mod database {
     }
     struct Courses {
         next_course_id: u64,
-        courses: BTreeMap<CourseId, Arc<Course>>,
+        courses: BTreeMap<CourseId, Course>,
         courses_owners_index: BTreeMap<UserId, Vec<CourseId>>,
-        progress: HashMap<UserId, BTreeMap<CourseId, Arc<UserProgress>>>,
+        progress: HashMap<UserId, BTreeMap<CourseId, UserProgress>>,
     }
     impl Courses {
         fn insert(&mut self, course: Course) -> CourseId {
@@ -120,15 +119,15 @@ mod database {
                 .entry(course.owner_id)
                 .or_default()
                 .push(course_id);
-            self.courses.insert(course_id, course.into());
+            self.courses.insert(course_id, course);
             course_id
         }
-        fn get_course(&self, id: CourseId) -> Option<Arc<Course>> {
+        fn get_course(&self, id: CourseId) -> Option<Course> {
             self.courses.get(&id).cloned()
         }
         /// Returns whether course already exists.
         fn set_course(&mut self, id: CourseId, content: Course) -> bool {
-            self.courses.insert(id, content.into()).is_some()
+            self.courses.insert(id, content).is_some()
         }
         fn select_courses_by_owner(&self, owner: UserId) -> Vec<CourseId> {
             self.courses_owners_index
@@ -143,7 +142,7 @@ mod database {
                 .unwrap_or_default()
         }
         /// Panics if user doesn't have progress for this course.
-        fn get_progress(&mut self, user_id: UserId, course_id: CourseId) -> Arc<UserProgress> {
+        fn get_progress(&mut self, user_id: UserId, course_id: CourseId) -> UserProgress {
             self.progress
                 .entry(user_id)
                 .or_default()
@@ -160,7 +159,7 @@ mod database {
             let entry = self.progress.entry(user_id).or_default().entry(course_id);
             match entry {
                 Entry::Vacant(vacant_entry) => {
-                    vacant_entry.insert(Arc::new(course.default_user_progress()));
+                    vacant_entry.insert(course.default_user_progress());
                     true
                 }
                 Entry::Occupied(_occupied_entry) => false,
@@ -173,7 +172,7 @@ mod database {
             course_id: CourseId,
             progress: UserProgress,
         ) -> Option<()> {
-            *self.progress.get_mut(&user_id)?.get_mut(&course_id)? = Arc::new(progress);
+            *self.progress.get_mut(&user_id)?.get_mut(&course_id)? = progress;
             Some(())
         }
     }
@@ -530,7 +529,7 @@ async fn handle_learned_course_interaction(
                 return Ok(());
             }
             let rcx = complete_card(bot, user.id, task, user_state, user_states).await;
-            let mut progress = arc_deep_clone(STORAGE.get_progress(user.id, course_id));
+            let mut progress = STORAGE.get_progress(user.id, course_id);
             progress.repetition(&card_name.to_owned(), rcx);
             STORAGE.set_course_progress(user.id, course_id, progress);
         }
