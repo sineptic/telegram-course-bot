@@ -67,7 +67,7 @@ fn now() -> DateTime<Local> {
     static START_TIME: LazyLock<Immutable<DateTime<Local>>> = LazyLock::new(|| Local::now().into());
     let now = Local::now();
     let diff = now - **START_TIME;
-    **START_TIME + diff * 3600
+    **START_TIME + diff * 1 // No speedup
 }
 
 pub async fn handle_changing_course_graph(
