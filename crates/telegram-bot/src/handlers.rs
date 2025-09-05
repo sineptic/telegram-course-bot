@@ -1,4 +1,3 @@
-use rand::seq::SliceRandom;
 use teloxide_core::types::{CallbackQuery, InputFile, ParseMode};
 use tokio::sync::oneshot;
 
@@ -136,9 +135,8 @@ pub async fn progress_on_user_event(
         match &interactions[*current] {
             TelegramInteraction::OneOf(vec) => {
                 *current_id = rand::random();
-                let mut labels = vec.clone();
-                labels.shuffle(&mut rand::rng());
-                let keyboard = InlineKeyboardMarkup::new(labels.iter().map(|label| {
+
+                let keyboard = InlineKeyboardMarkup::new(vec.iter().map(|label| {
                     [InlineKeyboardButton::callback(
                         label,
                         format!("{current_id} {label}"),
@@ -173,7 +171,7 @@ pub async fn progress_on_user_event(
                 answers.push(String::new());
             }
             TelegramInteraction::PersonalImage(bytes) => {
-                // FIXME: don't clone bytes(image)
+                // TODO: don't clone bytes(image)
                 bot.send_photo(user_id, InputFile::memory(bytes.clone()))
                     .await?;
                 *current += 1;

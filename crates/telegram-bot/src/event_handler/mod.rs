@@ -4,6 +4,7 @@ use anyhow::Context;
 use chrono::{DateTime, Local};
 use course_graph::graph::CourseGraph;
 use dashmap::DashMap;
+use rand::seq::SliceRandom;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide_core::{Bot, prelude::Requester, types::UserId};
 
@@ -52,14 +53,18 @@ async fn get_user_answer_raw(
     Ok(Some(answer))
 }
 
+const I_DONT_KNOW_MESSAGE: &str = "I don't know";
+
 async fn get_card_answer(
     bot: Bot,
     user_id: UserId,
     interactions: impl IntoIterator<Item = QuestionElement>,
-    answers: Vec<String>,
+    mut answers: Vec<String>,
     user_state: MutUserState<'_>,
 ) -> anyhow::Result<Option<String>> {
-    // TODO: add 'I dont know' option
+    answers.shuffle(&mut rand::rng());
+    answers.push(I_DONT_KNOW_MESSAGE.into());
+
     get_user_answer(bot, user_id, interactions, answers, user_state).await
 }
 
@@ -251,10 +256,13 @@ pub async fn complete_card(
         }
     } else {
         let mut messages = Vec::new();
-        messages.push(TelegramInteraction::Text(format!(
-            "Wrong. Answer is {}",
-            options[answer]
-        )));
+        messages.push(TelegramInteraction::Text(
+            if user_answer == I_DONT_KNOW_MESSAGE {
+                format!("Answer is {}", options[answer])
+            } else {
+                format!("Wrong. Answer is {}", options[answer])
+            },
+        ));
         if let Some(explanation) = explanation {
             messages.extend(explanation.iter().cloned().map(TelegramInteraction::from));
         }
