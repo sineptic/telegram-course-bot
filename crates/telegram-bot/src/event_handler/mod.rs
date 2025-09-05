@@ -129,7 +129,6 @@ pub async fn handle_changing_course_graph(
             assert!(answer[i].is_empty());
         }
         let answer = answer.last().unwrap();
-        dbg!(answer);
 
         match CourseGraph::from_str(answer) {
             Ok(new_course_graph) => {
@@ -223,12 +222,7 @@ pub fn syncronize(user_id: UserId, course_id: CourseId) {
         .unwrap()
         .structure
         .detect_recursive_fails(&mut progress);
-    // let mut user_progress = get_progress(course_id, user_id);
-    // user_progress.syncronize(now().into());
-    // COURSES_STORAGE.get_course(course_id).unwrap().structure;
-    // get_course(user_id)
-    //     .get_course_graph()
-    //     .detect_recursive_fails(&mut *user_progress);
+    STORAGE.set_course_progress(user_id, course_id, progress);
 }
 
 pub async fn complete_card(

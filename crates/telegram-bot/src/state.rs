@@ -19,6 +19,7 @@ pub enum Screen {
     Course(CourseId),
 }
 
+#[derive(Debug)]
 pub struct UserInteraction {
     pub interactions: Vec<TelegramInteraction>,
     pub current: usize,

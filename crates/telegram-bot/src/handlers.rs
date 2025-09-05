@@ -153,7 +153,7 @@ pub async fn progress_on_user_event(
                 break;
             }
             TelegramInteraction::Text(text) => {
-                bot.send_message(user_id, text)
+                bot.send_message(user_id, text.replace('.', r#"\."#))
                     .parse_mode(ParseMode::MarkdownV2)
                     .await?;
                 *current += 1;

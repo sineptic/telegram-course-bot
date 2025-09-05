@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, fmt::Debug, str::FromStr};
 
 use dot_structures::{Graph, Node, Stmt};
 use graphviz_rust::attributes::NodeAttributes;
@@ -6,7 +6,6 @@ use graphviz_rust::attributes::NodeAttributes;
 use crate::card::CardNode;
 
 #[derive(Clone, Debug)]
-#[allow(clippy::manual_non_exhaustive)]
 pub struct CourseGraph {
     pub(crate) text: String,
     pub(crate) cards: HashMap<String, CardNode>,
@@ -97,7 +96,10 @@ impl CourseGraph {
             .for_each(|x| self.propagate_no_fail(x, store));
     }
 
-    pub fn detect_recursive_fails(&self, store: &mut impl TaskProgressStore<Id = String>) {
+    pub fn detect_recursive_fails(
+        &self,
+        store: &mut (impl TaskProgressStore<Id = String> + Debug),
+    ) {
         self.cards.keys().for_each(|name| {
             if store[name] == TaskProgress::Failed {
                 self.propagate_fail(name, store);
