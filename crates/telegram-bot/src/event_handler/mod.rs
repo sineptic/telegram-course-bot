@@ -227,39 +227,39 @@ pub async fn handle_changing_deque(
     Ok(())
 }
 
-async fn learn_card(
-    bot: Bot,
-    user_id: UserId,
-    course_id: CourseId,
-    user_state: MutUserState<'_>,
-    user_states: &DashMap<UserId, UserState>,
-    card_name: String,
-) -> Result<(), anyhow::Error> {
-    syncronize(user_id, course_id);
-    if matches!(
-        STORAGE.get_progress(user_id, course_id)[&card_name],
-        TaskProgress::NotStarted {
-            could_be_learned: false
-        }
-    ) {
-        send_interactions(
-            bot.clone(),
-            user_id,
-            vec!["You should learn all dependencies before starting new card.".into()],
-            user_state,
-        )
-        .await?;
-        return Ok(());
-    }
-    if let Some(rcx) =
-        complete_card(bot, user_id, course_id, user_state, user_states, &card_name).await
-    {
-        let mut progress = arc_deep_clone(STORAGE.get_progress(user_id, course_id));
-        progress.repetition(&card_name, rcx);
-        STORAGE.set_course_progress(user_id, course_id, progress);
-    }
-    Ok(())
-}
+// async fn learn_card(
+//     bot: Bot,
+//     user_id: UserId,
+//     course_id: CourseId,
+//     user_state: MutUserState<'_>,
+//     user_states: &DashMap<UserId, UserState>,
+//     card_name: String,
+// ) -> Result<(), anyhow::Error> {
+//     syncronize(user_id, course_id);
+//     if matches!(
+//         STORAGE.get_progress(user_id, course_id)[&card_name],
+//         TaskProgress::NotStarted {
+//             could_be_learned: false
+//         }
+//     ) {
+//         send_interactions(
+//             bot.clone(),
+//             user_id,
+//             vec!["You should learn all dependencies before starting new card.".into()],
+//             user_state,
+//         )
+//         .await?;
+//         return Ok(());
+//     }
+//     if let Some(rcx) =
+//         complete_card(bot, user_id, course_id, user_state, user_states, &card_name).await
+//     {
+//         let mut progress = arc_deep_clone(STORAGE.get_progress(user_id, course_id));
+//         progress.repetition(&card_name, rcx);
+//         STORAGE.set_course_progress(user_id, course_id, progress);
+//     }
+//     Ok(())
+// }
 
 fn arc_deep_clone<T: Clone>(arc: Arc<T>) -> T {
     let mut new_value = arc.clone();
@@ -281,32 +281,15 @@ pub fn syncronize(_user_id: UserId, _course_id: CourseId) {
 pub async fn complete_card(
     bot: Bot,
     user_id: UserId,
-    course_id: CourseId,
-    user_state: MutUserState<'_>,
-    user_states: &DashMap<UserId, UserState>,
-    card_name: &str,
-) -> Option<RepetitionContext> {
-    let Task {
+    Task {
         question,
         options,
         answer,
         explanation,
-    } = {
-        let course = STORAGE.get_course(course_id).unwrap();
-        let Some(tasks) = course.tasks.tasks.get(card_name) else {
-            send_interactions(
-                bot,
-                user_id,
-                vec!["Card with this name not found".into()],
-                user_state,
-            )
-            .await
-            .log_err();
-            return None;
-        };
-        card::random_task(tasks, rand::rng()).clone()
-    };
-
+    }: Task,
+    user_state: MutUserState<'_>,
+    user_states: &DashMap<UserId, UserState>,
+) -> RepetitionContext {
     let Some(user_answer) = get_card_answer(
         bot.clone(),
         user_id,
@@ -317,35 +300,33 @@ pub async fn complete_card(
     .await
     .log_err()
     .unwrap() else {
-        return Some(RepetitionContext {
+        return RepetitionContext {
             quality: Quality::Again,
             review_time: now(),
-        });
+        };
     };
     if user_answer == options[answer] {
         bot.send_message(user_id, "Correct!").await.log_err();
-        Some(RepetitionContext {
+        RepetitionContext {
             quality: Quality::Good,
             review_time: now(),
-        })
-    } else {
-        bot.send_message(user_id, format!("Wrong. Answer is {}", options[answer]))
-            .await
-            .log_err();
-        if let Some(explanation) = explanation {
-            let user_state = user_states.get_mut(&user_id).unwrap();
-            send_interactions(
-                bot.clone(),
-                user_id,
-                explanation.iter().cloned().map(TelegramInteraction::from),
-                user_state,
-            )
-            .await
-            .log_err();
         }
-        Some(RepetitionContext {
+    } else {
+        let mut messages = Vec::new();
+        messages.push(TelegramInteraction::Text(format!(
+            "Wrong. Answer is {}",
+            options[answer]
+        )));
+        if let Some(explanation) = explanation {
+            messages.extend(explanation.iter().cloned().map(TelegramInteraction::from));
+        }
+        let user_state = user_states.get_mut(&user_id).unwrap();
+        send_interactions(bot.clone(), user_id, messages, user_state)
+            .await
+            .log_err();
+        RepetitionContext {
             quality: Quality::Again,
             review_time: now(),
-        })
+        }
     }
 }

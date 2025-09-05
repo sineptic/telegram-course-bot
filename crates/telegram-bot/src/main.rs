@@ -494,7 +494,21 @@ async fn handle_learned_course_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            complete_card(bot, user.id, course_id, user_state, user_states, tail).await;
+            let task = {
+                let course = STORAGE.get_course(course_id).unwrap();
+                let Some(tasks) = course.tasks.tasks.get(tail) else {
+                    send_interactions(
+                        bot,
+                        user.id,
+                        vec!["Card with this name not found".into()],
+                        user_state,
+                    )
+                    .await?;
+                    return Ok(());
+                };
+                interaction_types::card::random_task(tasks, rand::rng()).clone()
+            };
+            complete_card(bot, user.id, task, user_state, user_states).await;
         }
         "/graph" => {
             log_user_command(user, "graph");
@@ -622,7 +636,21 @@ async fn handle_owned_course_interaction(
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
-            complete_card(bot, user.id, course_id, user_state, user_states, tail).await;
+            let task = {
+                let course = STORAGE.get_course(course_id).unwrap();
+                let Some(tasks) = course.tasks.tasks.get(tail) else {
+                    send_interactions(
+                        bot,
+                        user.id,
+                        vec!["Card with this name not found".into()],
+                        user_state,
+                    )
+                    .await?;
+                    return Ok(());
+                };
+                interaction_types::card::random_task(tasks, rand::rng()).clone()
+            };
+            complete_card(bot, user.id, task, user_state, user_states).await;
         }
         "/graph" => {
             log_user_command(user, "graph");
