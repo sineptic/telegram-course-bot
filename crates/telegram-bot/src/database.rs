@@ -60,63 +60,65 @@ COMMIT;
 
 pub fn db_insert(course: Course) -> CourseId {
     let mut conn = get_connection();
-    let tr = conn.transaction().unwrap();
 
+    let tr = conn.transaction().unwrap();
+    let owner_id = course.owner_id.0;
+    let structure = serde_json::to_string(&course.structure).unwrap();
+    let tasks = serde_json::to_string(&course.tasks).unwrap();
     tr.execute(
         "
-INSERT INTO courses (owner_id, structure, tasks)
-VALUES (?1, ?2, ?3);
-",
-        (
-            course.owner_id.0,
-            serde_json::to_string(&course.structure).unwrap(),
-            serde_json::to_string(&course.tasks).unwrap(),
-        ),
+        INSERT INTO courses (owner_id, structure, tasks)
+        VALUES (?1, ?2, ?3);
+        ",
+        (owner_id, structure, tasks),
     )
     .unwrap();
-
     let course_id = CourseId(tr.last_insert_rowid() as u64);
     tr.commit().unwrap();
+
     course_id
 }
 
 fn row_to_course(row: &Row) -> rusqlite::Result<Course> {
+    let owner_id = UserId(row.get_unwrap("owner_id"));
+    let structure: String = row.get_unwrap("structure");
+    let structure = serde_json::from_str(&structure).unwrap();
+    let tasks: String = row.get_unwrap("tasks");
+    let tasks = serde_json::from_str(&tasks).unwrap();
     Ok(Course {
-        owner_id: UserId(row.get("owner_id")?),
-        structure: serde_json::from_str(String::as_str(&row.get("structure")?)).unwrap(),
-        tasks: serde_json::from_str(String::as_str(&row.get("tasks")?)).unwrap(),
+        owner_id,
+        structure,
+        tasks,
     })
 }
-pub fn db_get_course(course_id: CourseId) -> Option<Course> {
+pub fn db_get_course(CourseId(course_id): CourseId) -> Option<Course> {
     let conn = get_connection();
 
     conn.query_one(
         "
-SELECT owner_id, structure, tasks
-FROM courses
-WHERE course_id = ?;
-",
-        (course_id.0,),
+        SELECT owner_id, structure, tasks
+        FROM courses
+        WHERE course_id = ?;
+        ",
+        (course_id,),
         row_to_course,
     )
     .optional()
     .unwrap()
 }
-pub fn db_set_course(course_id: CourseId, value: Course) {
+pub fn db_set_course(CourseId(course_id): CourseId, course: Course) {
     let conn = get_connection();
 
+    let owner_id = course.owner_id.0;
+    let structure = serde_json::to_string(&course.structure).unwrap();
+    let tasks = serde_json::to_string(&course.tasks).unwrap();
     conn.execute(
         "
-UPDATE courses
-SET owner_id = ?, structure = ?, tasks = ?
-WHERE course_id = ?;
-",
-        (
-            value.owner_id.0,
-            serde_json::to_string(&value.structure).unwrap(),
-            serde_json::to_string(&value.tasks).unwrap(),
-            course_id.0,
-        ),
+        UPDATE courses
+        SET owner_id = ?, structure = ?, tasks = ?
+        WHERE course_id = ?;
+        ",
+        (owner_id, structure, tasks, course_id),
     )
     .unwrap();
 }
@@ -125,13 +127,13 @@ pub fn db_select_courses_by_owner(owner: UserId) -> Vec<CourseId> {
 
     conn.prepare(
         "
-SELECT course_id
-FROM courses
-WHERE owner_id = ?;
-",
+        SELECT course_id
+        FROM courses
+        WHERE owner_id = ?;
+        ",
     )
     .unwrap()
-    .query_map((owner.0,), |row| Ok(CourseId(row.get("course_id")?)))
+    .query_map((owner.0,), |row| Ok(CourseId(row.get_unwrap("course_id"))))
     .unwrap()
     .collect::<Result<_, _>>()
     .unwrap()
@@ -141,10 +143,10 @@ pub fn db_list_user_learned_courses(user_id: UserId) -> Vec<CourseId> {
 
     conn.prepare(
         "
-SELECT course_id
-FROM user_progress
-WHERE user_id = ?;
-",
+        SELECT course_id
+        FROM user_progress
+        WHERE user_id = ?;
+        ",
     )
     .unwrap()
     .query_map((user_id.0,), |row| Ok(CourseId(row.get("course_id")?)))
@@ -153,13 +155,17 @@ WHERE user_id = ?;
     .unwrap()
 }
 /// Panics if user doesn't have progress for this course.
-pub fn db_get_progress(user_id: UserId, course_id: CourseId) -> UserProgress {
+pub fn db_get_progress(UserId(user_id): UserId, CourseId(course_id): CourseId) -> UserProgress {
     let conn = get_connection();
 
     conn.query_one(
         "SELECT progress FROM user_progress WHERE user_id = ? AND course_id = ?",
-        (user_id.0, course_id.0),
-        |row| Ok(serde_json::from_str(String::as_str(&row.get("progress")?)).unwrap()),
+        (user_id, course_id),
+        |row| {
+            let progress: String = row.get_unwrap("progress");
+            let progress = serde_json::from_str(&progress).unwrap();
+            Ok(progress)
+        },
     )
     .unwrap()
 }
@@ -170,23 +176,20 @@ pub fn db_add_course_to_user(user_id: UserId, course_id: CourseId) {
     let course = tr
         .query_one(
             "
-SELECT owner_id, structure, tasks
-FROM courses
-WHERE course_id = ?;
-",
+            SELECT owner_id, structure, tasks
+            FROM courses
+            WHERE course_id = ?;
+            ",
             (course_id.0,),
             row_to_course,
         )
         .unwrap();
 
     if course.owner_id != user_id {
+        let default_progress = serde_json::to_string(&course.default_user_progress()).unwrap();
         tr.execute(
             "INSERT INTO user_progress (user_id, course_id, progress) VALUE (?, ?, ?)",
-            (
-                user_id.0,
-                course_id.0,
-                serde_json::to_string(&course.default_user_progress()).unwrap(),
-            ),
+            (user_id.0, course_id.0, default_progress),
         )
         .unwrap();
     }
@@ -195,17 +198,14 @@ WHERE course_id = ?;
 /// Returns None if this progress doesn't exists.
 pub fn db_set_course_progress(user_id: UserId, course_id: CourseId, progress: UserProgress) {
     let conn = get_connection();
+    let progress = serde_json::to_string(&progress).unwrap();
     conn.execute(
         "
-UPDATE user_progress
-SET progress = ?
-WHERE user_id = ? AND course_id = ?
-",
-        (
-            serde_json::to_string(&progress).unwrap(),
-            user_id.0,
-            course_id.0,
-        ),
+        UPDATE user_progress
+        SET progress = ?
+        WHERE user_id = ? AND course_id = ?
+        ",
+        (progress, user_id.0, course_id.0),
     )
     .unwrap();
 }
