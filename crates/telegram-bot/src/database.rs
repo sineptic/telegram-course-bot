@@ -1,9 +1,7 @@
-use std::{
-    collections::HashMap,
-    sync::{LazyLock, Mutex, MutexGuard},
-};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use course_graph::graph::CourseGraph;
+use rusqlite::{Connection, OptionalExtension, Row};
 use serde::{Deserialize, Serialize};
 use teloxide_core::types::UserId;
 
@@ -18,108 +16,198 @@ pub struct Course {
     pub tasks: Deque,
 }
 
-struct ProgressTableRow {
-    user_id: UserId,
-    course_id: CourseId,
-    progress: UserProgress,
-}
-struct Courses {
-    next_course_id: u64,
-    courses: HashMap<CourseId, Course>,
-    progress: Vec<ProgressTableRow>,
-}
+static STORAGE: LazyLock<Mutex<Connection>> =
+    LazyLock::new(|| Mutex::new(Connection::open_in_memory().unwrap()));
 
-static STORAGE: LazyLock<Mutex<Courses>> = LazyLock::new(|| {
-    Mutex::new(Courses {
-        next_course_id: 0,
-        courses: HashMap::new(),
-        progress: Vec::new(),
-    })
-});
-
-fn get_storage<'a>() -> MutexGuard<'a, Courses> {
+fn get_connection<'a>() -> MutexGuard<'a, Connection> {
     STORAGE.lock().unwrap_or_else(|err| {
         log::error!("Some thread panicked while holding mutex");
         err.into_inner()
     })
 }
 
-pub fn db_insert(course: Course) -> CourseId {
-    let mut storage = get_storage();
+pub fn db_create_tables() {
+    let conn = get_connection();
 
-    let course_id = CourseId(storage.next_course_id);
-    storage.next_course_id += 1;
-    storage.courses.insert(course_id, course);
+    conn.execute_batch(
+        "
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS courses (
+    course_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL,
+    structure TEXT NOT NULL,  -- JSON serialized CourseGraph
+    tasks TEXT NOT NULL       -- JSON serialized Deque
+);
+
+CREATE TABLE IF NOT EXISTS user_progress (
+    user_id INTEGER NOT NULL,
+    course_id INTEGER NOT NULL,
+    progress TEXT NOT NULL,   -- JSON serialized UserProgress
+    PRIMARY KEY (user_id, course_id),
+    FOREIGN KEY (course_id) REFERENCES courses(course_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_courses_owner ON courses(owner_id);
+
+CREATE INDEX IF NOT EXISTS idx_user_progress_user ON user_progress(user_id);
+
+COMMIT;
+",
+    )
+    .unwrap();
+}
+
+pub fn db_insert(course: Course) -> CourseId {
+    let mut conn = get_connection();
+    let tr = conn.transaction().unwrap();
+
+    tr.execute(
+        "
+INSERT INTO courses (owner_id, structure, tasks)
+VALUES (?1, ?2, ?3);
+",
+        (
+            course.owner_id.0,
+            serde_json::to_string(&course.structure).unwrap(),
+            serde_json::to_string(&course.tasks).unwrap(),
+        ),
+    )
+    .unwrap();
+
+    let course_id = CourseId(tr.last_insert_rowid() as u64);
+    tr.commit().unwrap();
     course_id
 }
-pub fn db_get_course(course_id: CourseId) -> Option<Course> {
-    let storage = get_storage();
 
-    storage.courses.get(&course_id).cloned()
+fn row_to_course(row: &Row) -> rusqlite::Result<Course> {
+    Ok(Course {
+        owner_id: UserId(row.get("owner_id")?),
+        structure: serde_json::from_str(String::as_str(&row.get("structure")?)).unwrap(),
+        tasks: serde_json::from_str(String::as_str(&row.get("tasks")?)).unwrap(),
+    })
+}
+pub fn db_get_course(course_id: CourseId) -> Option<Course> {
+    let conn = get_connection();
+
+    conn.query_one(
+        "
+SELECT owner_id, structure, tasks
+FROM courses
+WHERE course_id = ?;
+",
+        (course_id.0,),
+        row_to_course,
+    )
+    .optional()
+    .unwrap()
 }
 pub fn db_set_course(course_id: CourseId, value: Course) {
-    let mut storage = get_storage();
+    let conn = get_connection();
 
-    storage.courses.insert(course_id, value);
+    conn.execute(
+        "
+UPDATE courses
+SET owner_id = ?, structure = ?, tasks = ?
+WHERE course_id = ?;
+",
+        (
+            value.owner_id.0,
+            serde_json::to_string(&value.structure).unwrap(),
+            serde_json::to_string(&value.tasks).unwrap(),
+            course_id.0,
+        ),
+    )
+    .unwrap();
 }
 pub fn db_select_courses_by_owner(owner: UserId) -> Vec<CourseId> {
-    let storage = get_storage();
+    let conn = get_connection();
 
-    storage
-        .courses
-        .iter()
-        .filter(|(_, course)| course.owner_id == owner)
-        .map(|(&course_id, _)| course_id)
-        .collect()
+    conn.prepare(
+        "
+SELECT course_id
+FROM courses
+WHERE owner_id = ?;
+",
+    )
+    .unwrap()
+    .query_map((owner.0,), |row| Ok(CourseId(row.get("course_id")?)))
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
 }
 pub fn db_list_user_learned_courses(user_id: UserId) -> Vec<CourseId> {
-    let storage = get_storage();
+    let conn = get_connection();
 
-    storage
-        .progress
-        .iter()
-        .filter(|row| row.user_id == user_id)
-        .map(|row| row.course_id)
-        .collect()
+    conn.prepare(
+        "
+SELECT course_id
+FROM user_progress
+WHERE user_id = ?;
+",
+    )
+    .unwrap()
+    .query_map((user_id.0,), |row| Ok(CourseId(row.get("course_id")?)))
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
 }
 /// Panics if user doesn't have progress for this course.
 pub fn db_get_progress(user_id: UserId, course_id: CourseId) -> UserProgress {
-    let storage = get_storage();
+    let conn = get_connection();
 
-    storage
-        .progress
-        .iter()
-        .find(|row| row.user_id == user_id && row.course_id == course_id)
-        .map(|row| row.progress.clone())
-        .unwrap()
+    conn.query_one(
+        "SELECT progress FROM user_progress WHERE user_id = ? AND course_id = ?",
+        (user_id.0, course_id.0),
+        |row| Ok(serde_json::from_str(String::as_str(&row.get("progress")?)).unwrap()),
+    )
+    .unwrap()
 }
 pub fn db_add_course_to_user(user_id: UserId, course_id: CourseId) {
-    let mut storage = get_storage();
+    let mut conn = get_connection();
 
-    let course = storage.courses[&course_id].clone();
-    if course.owner_id != user_id
-        && !storage
-            .progress
-            .iter()
-            .any(|row| row.user_id == user_id && row.course_id == course_id)
-    {
-        storage.progress.push(ProgressTableRow {
-            user_id,
-            course_id,
-            progress: course.default_user_progress(),
-        });
+    let tr = conn.transaction().unwrap();
+    let course = tr
+        .query_one(
+            "
+SELECT owner_id, structure, tasks
+FROM courses
+WHERE course_id = ?;
+",
+            (course_id.0,),
+            row_to_course,
+        )
+        .unwrap();
+
+    if course.owner_id != user_id {
+        tr.execute(
+            "INSERT INTO user_progress (user_id, course_id, progress) VALUE (?, ?, ?)",
+            (
+                user_id.0,
+                course_id.0,
+                serde_json::to_string(&course.default_user_progress()).unwrap(),
+            ),
+        )
+        .unwrap();
     }
+    tr.commit().unwrap();
 }
 /// Returns None if this progress doesn't exists.
 pub fn db_set_course_progress(user_id: UserId, course_id: CourseId, progress: UserProgress) {
-    let mut storage = get_storage();
-
-    storage
-        .progress
-        .iter_mut()
-        .find(|row| row.user_id == user_id && row.course_id == course_id)
-        .expect("You should run `add_course_to_user` before this function")
-        .progress = progress;
+    let conn = get_connection();
+    conn.execute(
+        "
+UPDATE user_progress
+SET progress = ?
+WHERE user_id = ? AND course_id = ?
+",
+        (
+            serde_json::to_string(&progress).unwrap(),
+            user_id.0,
+            course_id.0,
+        ),
+    )
+    .unwrap();
 }
 
 impl Course {

@@ -39,6 +39,7 @@ async fn main() {
     pretty_env_logger::init();
     let bot = Bot::from_env();
     let users_state: &DashMap<UserId, UserState> = Box::leak(Box::new(DashMap::new()));
+    db_create_tables();
 
     log::info!("Bot started");
 
