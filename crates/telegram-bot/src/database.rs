@@ -17,7 +17,7 @@ pub struct Course {
 }
 
 static STORAGE: LazyLock<Mutex<Connection>> =
-    LazyLock::new(|| Mutex::new(Connection::open_in_memory().unwrap()));
+    LazyLock::new(|| Mutex::new(Connection::open("db.sqlite").unwrap()));
 
 fn get_connection<'a>() -> MutexGuard<'a, Connection> {
     STORAGE.lock().unwrap_or_else(|err| {

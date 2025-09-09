@@ -2,3 +2,4 @@ assets/
 .env
 *.png
 target/
+*.sqlite
