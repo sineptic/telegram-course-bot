@@ -101,7 +101,7 @@ async fn update_handler(bot: Bot, update: Update, user_states: &DashMap<UserId, 
                         .log_err();
                 }
                 Screen::Course(course_id) => {
-                    match STORAGE.get_course(course_id).unwrap().owner_id == user.id {
+                    match db_get_course(course_id).unwrap().owner_id == user.id {
                         true => {
                             handle_owned_course_interaction(
                                 bot,
@@ -176,7 +176,7 @@ async fn send_help_message(
         match user_state.current_screen {
             Screen::Main => main_menu_help_message,
             Screen::Course(course_id) => {
-                match STORAGE.get_course(course_id).unwrap().owner_id == user.id {
+                match db_get_course(course_id).unwrap().owner_id == user.id {
                     true => owned_course_help_message,
                     false => learned_course_help_message,
                 }
@@ -216,7 +216,7 @@ async fn handle_main_menu_interaction(
         }
         "/create_course" => {
             log_user_command(user, "create_course");
-            let course_id = STORAGE.insert(Course {
+            let course_id = db_insert(Course {
                 owner_id: user.id,
                 structure: CourseGraph::default(),
                 tasks: Deque::default(),
@@ -243,21 +243,21 @@ async fn handle_main_menu_interaction(
                 user.id
             );
             let course_id = CourseId(course_id);
-            if STORAGE.get_course(course_id).is_none() {
+            if db_get_course(course_id).is_none() {
                 bot.send_message(user.id, "Can't find course with this id.")
                     .await?;
                 return Ok(());
             }
             user_state.current_screen = Screen::Course(course_id);
-            STORAGE.add_course_to_user(user.id, course_id);
+            db_add_course_to_user(user.id, course_id);
             bot.send_message(user.id, "You are now in course menu.")
                 .await?;
             send_help_message(bot, user, &user_state).await?;
         }
         "/list" => {
             log_user_command(user, "list");
-            let owned_courses = STORAGE.select_courses_by_owner(user.id);
-            let learned_courses = STORAGE.list_user_learned_courses(user.id);
+            let owned_courses = db_select_courses_by_owner(user.id);
+            let learned_courses = db_list_user_learned_courses(user.id);
             let mut message = String::new();
             message.push_str("# Owned\n");
             for course in owned_courses {
@@ -323,7 +323,7 @@ async fn handle_learned_course_interaction(
 
             syncronize(user.id, course_id);
             let task = {
-                let course = STORAGE.get_course(course_id).unwrap();
+                let course = db_get_course(course_id).unwrap();
                 let Some(tasks) = course.tasks.tasks.get(card_name) else {
                     send_interactions(
                         bot,
@@ -335,7 +335,7 @@ async fn handle_learned_course_interaction(
                     return Ok(());
                 };
                 let tasks_list = tasks.values().collect::<Vec<_>>();
-                let meaningful_repetitions = STORAGE.get_progress(user.id, course_id).tasks
+                let meaningful_repetitions = db_get_progress(user.id, course_id).tasks
                     [&card_name.to_owned()]
                     .meaningful_repetitions;
                 if (meaningful_repetitions as usize) < tasks_list.len() {
@@ -348,7 +348,7 @@ async fn handle_learned_course_interaction(
                 }
             };
             if matches!(
-                STORAGE.get_progress(user.id, course_id)[&card_name.to_owned()],
+                db_get_progress(user.id, course_id)[&card_name.to_owned()],
                 TaskProgress::NotStarted {
                     could_be_learned: false
                 }
@@ -362,9 +362,9 @@ async fn handle_learned_course_interaction(
             }
             let (rcx, is_meaningful) =
                 complete_card(bot, user.id, task, user_state, user_states).await;
-            let mut progress = STORAGE.get_progress(user.id, course_id);
+            let mut progress = db_get_progress(user.id, course_id);
             progress.repetition(&card_name.to_owned(), rcx, is_meaningful);
-            STORAGE.set_course_progress(user.id, course_id, progress);
+            db_set_course_progress(user.id, course_id, progress);
         }
         "/graph" => {
             log_user_command(user, "graph");
@@ -375,7 +375,7 @@ async fn handle_learned_course_interaction(
             }
             syncronize(user.id, course_id);
 
-            let Some(course) = STORAGE.get_course(course_id) else {
+            let Some(course) = db_get_course(course_id) else {
                 bot.send_message(
                     user.id,
                     format!("Course with id {} not found.", course_id.0),
@@ -385,8 +385,7 @@ async fn handle_learned_course_interaction(
             };
             let mut graph = course.structure.generate_structure_graph();
 
-            STORAGE
-                .get_progress(user.id, course_id)
+            db_get_progress(user.id, course_id)
                 .generate_stmts()
                 .into_iter()
                 .for_each(|stmt| {
@@ -461,7 +460,7 @@ async fn handle_owned_course_interaction(
                 user.id
             );
             let task = {
-                let course = STORAGE.get_course(course_id).unwrap();
+                let course = db_get_course(course_id).unwrap();
                 let Some(tasks) = course.tasks.tasks.get(tail) else {
                     send_interactions(
                         bot,
@@ -484,7 +483,7 @@ async fn handle_owned_course_interaction(
                 return Ok(());
             }
 
-            let Some(course) = STORAGE.get_course(course_id) else {
+            let Some(course) = db_get_course(course_id) else {
                 bot.send_message(
                     user.id,
                     format!("Course with id {} not found.", course_id.0),
@@ -560,11 +559,7 @@ async fn handle_owned_course_interaction(
                     "Course graph source:".into(),
                     format!(
                         "```\n{}\n```",
-                        STORAGE
-                            .get_course(course_id)
-                            .unwrap()
-                            .structure
-                            .get_source()
+                        db_get_course(course_id).unwrap().structure.get_source()
                     )
                     .into(),
                 ],
@@ -589,12 +584,7 @@ async fn handle_owned_course_interaction(
                     "Deque source:".into(),
                     format!(
                         "```\n{}\n```",
-                        STORAGE
-                            .get_course(course_id)
-                            .unwrap()
-                            .tasks
-                            .source
-                            .to_owned()
+                        db_get_course(course_id).unwrap().tasks.source.to_owned()
                     )
                     .into(),
                 ],
@@ -612,7 +602,7 @@ async fn handle_owned_course_interaction(
                 .await?;
                 return Ok(());
             }
-            if let Some(errors) = STORAGE.get_course(course_id).unwrap().get_errors() {
+            if let Some(errors) = db_get_course(course_id).unwrap().get_errors() {
                 let mut msgs = Vec::new();
                 msgs.push("Errors:".into());
                 for error in errors {

@@ -9,8 +9,7 @@ use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
 use teloxide_core::{Bot, prelude::Requester, types::UserId};
 
 use crate::{
-    STORAGE,
-    database::CourseId,
+    database::*,
     handlers::{send_interactions, set_task_for_user},
     interaction_types::{telegram_interaction::QuestionElement, *},
     state::{MutUserState, UserState},
@@ -82,7 +81,7 @@ pub async fn handle_changing_course_graph(
     course_id: CourseId,
 ) -> anyhow::Result<()> {
     let (source, printed_graph) = {
-        let Some(course) = STORAGE.get_course(course_id) else {
+        let Some(course) = db_get_course(course_id) else {
             bot.send_message(
                 user_id,
                 format!("Course with id {} not found.", course_id.0),
@@ -134,9 +133,9 @@ pub async fn handle_changing_course_graph(
 
         match CourseGraph::from_str(answer) {
             Ok(new_course_graph) => {
-                let mut new_course = STORAGE.get_course(course_id).unwrap();
+                let mut new_course = db_get_course(course_id).unwrap();
                 new_course.structure = new_course_graph;
-                STORAGE.set_course(course_id, new_course);
+                db_set_course(course_id, new_course);
                 bot.send_message(user_id, "Course graph changed.").await?;
             }
             Err(err) => {
@@ -157,7 +156,7 @@ pub async fn handle_changing_deque(
     user_id: UserId,
     course_id: CourseId,
 ) -> anyhow::Result<()> {
-    let Some(course) = STORAGE.get_course(course_id) else {
+    let Some(course) = db_get_course(course_id) else {
         bot.send_message(
             user_id,
             format!("Course with id {} not found.", course_id.0),
@@ -195,7 +194,7 @@ pub async fn handle_changing_deque(
             Ok(new_deque) => {
                 let mut new_course = course;
                 new_course.tasks = new_deque;
-                STORAGE.set_course(course_id, new_course);
+                db_set_course(course_id, new_course);
                 bot.send_message(user_id, "Deque changed.").await?;
             }
             Err(err) => {
@@ -211,14 +210,13 @@ pub async fn handle_changing_deque(
 }
 
 pub fn syncronize(user_id: UserId, course_id: CourseId) {
-    let mut progress = STORAGE.get_progress(user_id, course_id);
+    let mut progress = db_get_progress(user_id, course_id);
     progress.syncronize(now().into());
-    STORAGE
-        .get_course(course_id)
+    db_get_course(course_id)
         .unwrap()
         .structure
         .detect_recursive_fails(&mut progress);
-    STORAGE.set_course_progress(user_id, course_id, progress);
+    db_set_course_progress(user_id, course_id, progress);
 }
 
 pub async fn complete_card(

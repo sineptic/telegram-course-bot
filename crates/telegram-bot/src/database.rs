@@ -1,11 +1,3 @@
-pub static STORAGE: LazyLock<CoursesWrapper> = LazyLock::new(|| CoursesWrapper {
-    inner: Mutex::new(Courses {
-        next_course_id: 0,
-        courses: HashMap::new(),
-        progress: Vec::new(),
-    }),
-});
-
 use std::{
     collections::HashMap,
     sync::{LazyLock, Mutex, MutexGuard},
@@ -25,124 +17,111 @@ pub struct Course {
     pub structure: CourseGraph,
     pub tasks: Deque,
 }
-pub struct CoursesWrapper {
-    inner: Mutex<Courses>,
-}
-impl CoursesWrapper {
-    fn inner(&self) -> MutexGuard<'_, Courses> {
-        self.inner.lock().unwrap_or_else(|err| {
-            log::error!("Some thread panicked while holding mutex");
-            err.into_inner()
-        })
-    }
-    pub fn insert(&self, course: Course) -> CourseId {
-        self.inner().insert(course)
-    }
-    pub fn get_course(&self, course_id: CourseId) -> Option<Course> {
-        self.inner().get_course(course_id)
-    }
-    pub fn set_course(&self, course_id: CourseId, value: Course) {
-        self.inner().set_course(course_id, value)
-    }
-    pub fn select_courses_by_owner(&self, owner: UserId) -> Vec<CourseId> {
-        self.inner().select_courses_by_owner(owner)
-    }
-    pub fn list_user_learned_courses(&self, user_id: UserId) -> Vec<CourseId> {
-        self.inner().list_user_learned_courses(user_id)
-    }
-    /// Panics if user doesn't have progress for this course.
-    pub fn get_progress(&self, user_id: UserId, course_id: CourseId) -> UserProgress {
-        self.inner().get_progress(user_id, course_id)
-    }
-    pub fn add_course_to_user(&self, user_id: UserId, course_id: CourseId) {
-        self.inner().add_course_to_user(user_id, course_id)
-    }
-    /// Returns None if this progress doesn't exists.
-    pub fn set_course_progress(
-        &self,
-        user_id: UserId,
-        course_id: CourseId,
-        progress: UserProgress,
-    ) {
-        self.inner()
-            .set_course_progress(user_id, course_id, progress)
-    }
-}
 
 struct ProgressTableRow {
     user_id: UserId,
     course_id: CourseId,
     progress: UserProgress,
 }
-
 struct Courses {
     next_course_id: u64,
     courses: HashMap<CourseId, Course>,
     progress: Vec<ProgressTableRow>,
 }
-impl Courses {
-    fn insert(&mut self, course: Course) -> CourseId {
-        let course_id = CourseId(self.next_course_id);
-        self.next_course_id += 1;
-        self.courses.insert(course_id, course);
-        course_id
-    }
-    fn get_course(&self, id: CourseId) -> Option<Course> {
-        self.courses.get(&id).cloned()
-    }
-    fn set_course(&mut self, id: CourseId, content: Course) {
-        self.courses.insert(id, content);
-    }
-    fn select_courses_by_owner(&self, owner: UserId) -> Vec<CourseId> {
-        self.courses
+
+static STORAGE: LazyLock<Mutex<Courses>> = LazyLock::new(|| {
+    Mutex::new(Courses {
+        next_course_id: 0,
+        courses: HashMap::new(),
+        progress: Vec::new(),
+    })
+});
+
+fn get_storage<'a>() -> MutexGuard<'a, Courses> {
+    STORAGE.lock().unwrap_or_else(|err| {
+        log::error!("Some thread panicked while holding mutex");
+        err.into_inner()
+    })
+}
+
+pub fn db_insert(course: Course) -> CourseId {
+    let mut storage = get_storage();
+
+    let course_id = CourseId(storage.next_course_id);
+    storage.next_course_id += 1;
+    storage.courses.insert(course_id, course);
+    course_id
+}
+pub fn db_get_course(course_id: CourseId) -> Option<Course> {
+    let storage = get_storage();
+
+    storage.courses.get(&course_id).cloned()
+}
+pub fn db_set_course(course_id: CourseId, value: Course) {
+    let mut storage = get_storage();
+
+    storage.courses.insert(course_id, value);
+}
+pub fn db_select_courses_by_owner(owner: UserId) -> Vec<CourseId> {
+    let storage = get_storage();
+
+    storage
+        .courses
+        .iter()
+        .filter(|(_, course)| course.owner_id == owner)
+        .map(|(&course_id, _)| course_id)
+        .collect()
+}
+pub fn db_list_user_learned_courses(user_id: UserId) -> Vec<CourseId> {
+    let storage = get_storage();
+
+    storage
+        .progress
+        .iter()
+        .filter(|row| row.user_id == user_id)
+        .map(|row| row.course_id)
+        .collect()
+}
+/// Panics if user doesn't have progress for this course.
+pub fn db_get_progress(user_id: UserId, course_id: CourseId) -> UserProgress {
+    let storage = get_storage();
+
+    storage
+        .progress
+        .iter()
+        .find(|row| row.user_id == user_id && row.course_id == course_id)
+        .map(|row| row.progress.clone())
+        .unwrap()
+}
+pub fn db_add_course_to_user(user_id: UserId, course_id: CourseId) {
+    let mut storage = get_storage();
+
+    let course = storage.courses[&course_id].clone();
+    if course.owner_id != user_id
+        && !storage
+            .progress
             .iter()
-            .filter(|(_, course)| course.owner_id == owner)
-            .map(|(&course_id, _)| course_id)
-            .collect()
-    }
-    fn list_user_learned_courses(&self, user: UserId) -> Vec<CourseId> {
-        self.progress
-            .iter()
-            .filter(|row| row.user_id == user)
-            .map(|row| row.course_id)
-            .collect()
-    }
-    /// Panics if user doesn't have progress for this course.
-    fn get_progress(&mut self, user_id: UserId, course_id: CourseId) -> UserProgress {
-        self.progress
-            .iter()
-            .find(|row| row.user_id == user_id && row.course_id == course_id)
-            .map(|row| row.progress.clone())
-            .unwrap()
-    }
-    fn add_course_to_user(&mut self, user_id: UserId, course_id: CourseId) {
-        let course = self.get_course(course_id).unwrap();
-        if course.owner_id != user_id
-            && !self
-                .progress
-                .iter()
-                .any(|row| row.user_id == user_id && row.course_id == course_id)
-        {
-            self.progress.push(ProgressTableRow {
-                user_id,
-                course_id,
-                progress: course.default_user_progress(),
-            });
-        }
-    }
-    fn set_course_progress(
-        &mut self,
-        user_id: UserId,
-        course_id: CourseId,
-        progress: UserProgress,
-    ) {
-        self.progress
-            .iter_mut()
-            .find(|row| row.user_id == user_id && row.course_id == course_id)
-            .expect("You should run `add_course_to_user` before this function")
-            .progress = progress;
+            .any(|row| row.user_id == user_id && row.course_id == course_id)
+    {
+        storage.progress.push(ProgressTableRow {
+            user_id,
+            course_id,
+            progress: course.default_user_progress(),
+        });
     }
 }
+/// Returns None if this progress doesn't exists.
+pub fn db_set_course_progress(user_id: UserId, course_id: CourseId, progress: UserProgress) {
+    let mut storage = get_storage();
+
+    storage
+        .progress
+        .iter_mut()
+        .find(|row| row.user_id == user_id && row.course_id == course_id)
+        .expect("You should run `add_course_to_user` before this function")
+        .progress = progress;
+}
+
 impl Course {
     pub fn default_user_progress(&self) -> UserProgress {
         let mut user_progress = UserProgress::default();
