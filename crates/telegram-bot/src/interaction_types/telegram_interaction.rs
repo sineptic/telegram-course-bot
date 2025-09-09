@@ -17,8 +17,7 @@ where
 {
     fn from(value: T) -> Self {
         let text = value.into();
-        let escaped = text.replace(".", "\\.").replace("!", "\\!");
-        TelegramInteraction::Text(escaped)
+        TelegramInteraction::Text(text)
     }
 }
 
