@@ -483,7 +483,7 @@ async fn handle_owned_course_interaction(
                 return Ok(());
             }
             log::info!(
-                "user {}({}) sends card '{tail}' command",
+                "user {}({}) sends preview '{tail}' command",
                 user.username.clone().unwrap_or("unknown".into()),
                 user.id
             );
