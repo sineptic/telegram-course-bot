@@ -43,7 +43,9 @@ pub async fn set_task_for_user(
         channel: Some(channel),
     });
 
-    progress_on_user_event(bot, user_id, &mut user_state.current_interaction).await?;
+    progress_on_user_event(bot, user_id, &mut user_state.current_interaction)
+        .await
+        .context("failed to progress on initial events after task for user is set")?;
     Ok(())
 }
 
@@ -78,7 +80,8 @@ pub async fn callback_handler(
     else {
         log::warn!("user {:?} in different state", q.from);
         bot.send_message(user_id, "You can answer only to current question")
-            .await?;
+            .await
+            .context("failed to warn user, that he can only answer to current question")?;
         return Ok(());
     };
 
@@ -90,7 +93,8 @@ pub async fn callback_handler(
         log::info!("user {:?} answer to previous question", q.from);
         // TODO: maybe delete this message
         bot.send_message(user_id, "You can answer only to current question")
-            .await?;
+            .await
+            .context("failed to warn user, that he can only answer to current question")?;
         return Ok(());
     }
 
@@ -99,12 +103,15 @@ pub async fn callback_handler(
         current_message.unwrap(),
         format!("You answer: {response}"),
     )
-    .await?;
+    .await
+    .context("failed to send user his answer")?;
 
     answers.push(response.to_owned());
     *current += 1;
 
-    progress_on_user_event(bot, user_id, &mut user_state.current_interaction).await?;
+    progress_on_user_event(bot, user_id, &mut user_state.current_interaction)
+        .await
+        .context("failed to progress on user event")?;
 
     Ok(())
 }
@@ -145,7 +152,8 @@ pub async fn progress_on_user_event(
                 let message = bot
                     .send_message(user_id, "choose answer")
                     .reply_markup(keyboard)
-                    .await?;
+                    .await
+                    .context("failed to send reply markup")?;
 
                 *current_message = Some(message.id);
                 break;
@@ -153,12 +161,16 @@ pub async fn progress_on_user_event(
             TelegramInteraction::Text(text) => {
                 bot.send_message(user_id, text.replace('.', r#"\."#))
                     .parse_mode(ParseMode::MarkdownV2)
-                    .await?;
+                    .await
+                    .context("failed to send text message to user")?;
                 *current += 1;
                 answers.push(String::new());
             }
             TelegramInteraction::UserInput => {
-                let message = bot.send_message(user_id, "Please enter your input").await?;
+                let message = bot
+                    .send_message(user_id, "Please enter your input")
+                    .await
+                    .context("failed to request user input")?;
 
                 *current_message = Some(message.id);
                 *current_id = rand::random();
@@ -166,14 +178,16 @@ pub async fn progress_on_user_event(
             }
             TelegramInteraction::Image(link) => {
                 bot.send_photo(user_id, InputFile::url(link.clone()))
-                    .await?;
+                    .await
+                    .context("failed to send photo")?;
                 *current += 1;
                 answers.push(String::new());
             }
             TelegramInteraction::PersonalImage(bytes) => {
                 // TODO: don't clone bytes(image)
                 bot.send_photo(user_id, InputFile::memory(bytes.clone()))
-                    .await?;
+                    .await
+                    .context("failed to send personal image(one time, not shared with others)")?;
                 *current += 1;
                 answers.push(String::new());
             }

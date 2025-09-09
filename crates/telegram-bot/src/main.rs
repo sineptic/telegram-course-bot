@@ -184,7 +184,8 @@ async fn send_help_message(
             }
         },
     )
-    .await?;
+    .await
+    .context("failed to send help message")?;
     Ok(())
 }
 
@@ -223,10 +224,13 @@ async fn handle_main_menu_interaction(
                 tasks: Deque::default(),
             });
             bot.send_message(user.id, format!("Course created with id {}.", course_id.0))
-                .await?;
+                .await
+                .context("failed to confirm, that course created")
+                .log_err();
             user_state.current_screen = Screen::Course(course_id);
             bot.send_message(user.id, "You are now in course menu.")
-                .await?;
+                .await
+                .context("failed to notify user, that he is now in course menu")?;
             send_help_message(bot, user, &user_state).await?;
         }
         "/course" => {
@@ -235,7 +239,8 @@ async fn handle_main_menu_interaction(
                     user.id,
                     format!("Can't parse course id from this string: '{tail}'."),
                 )
-                .await?;
+                .await
+                .context("failed to notify user about parsing error")?;
                 return Ok(());
             };
             log::info!(
@@ -246,13 +251,15 @@ async fn handle_main_menu_interaction(
             let course_id = CourseId(course_id);
             if db_get_course(course_id).is_none() {
                 bot.send_message(user.id, "Can't find course with this id.")
-                    .await?;
+                    .await
+                    .context("failed to notify user, that course with this id doesn't exists")?;
                 return Ok(());
             }
             user_state.current_screen = Screen::Course(course_id);
             db_add_course_to_user(user.id, course_id);
             bot.send_message(user.id, "You are now in course menu.")
-                .await?;
+                .await
+                .context("failed to notify user, that he is now in course menu")?;
             send_help_message(bot, user, &user_state).await?;
         }
         "/list" => {
@@ -270,10 +277,14 @@ async fn handle_main_menu_interaction(
                 message.push_str(&course.0.to_string());
                 message.push('\n');
             }
-            bot.send_message(user.id, message).await?;
+            bot.send_message(user.id, message)
+                .await
+                .context("failed to send list of courses")?;
         }
         _ => {
-            handle_no_command(bot, user, message, user_state).await?;
+            handle_no_command(bot, user, message, user_state)
+                .await
+                .context("failed to handle 'no command'")?;
         }
     }
     Ok(())
@@ -297,14 +308,16 @@ async fn handle_learned_course_interaction(
             log_user_command(user, "exit");
             user_state.current_screen = Screen::Main;
             bot.send_message(user.id, "You are now in main menu.")
-                .await?;
+                .await
+                .context("failed to notify user, that he is now in main menu")?;
             send_help_message(bot, user, &user_state).await?;
         }
         "/card" => {
             log_user_command(user, "card");
             if tail.contains(" ") {
                 bot.send_message(user.id, "Error: Card name should not contain spaces.")
-                    .await?;
+                    .await
+                    .context("failed to send user, that card name should not contain spaces")?;
                 return Ok(());
             }
             if tail.is_empty() {
@@ -312,7 +325,8 @@ async fn handle_learned_course_interaction(
                     user.id,
                     "Error: You should provide card name, you want to learn.",
                 )
-                .await?;
+                .await
+                .context("failed to notify user, that card command should contain card name")?;
                 return Ok(());
             }
             let card_name = tail;
@@ -332,7 +346,8 @@ async fn handle_learned_course_interaction(
                         vec!["Card with this name not found".into()],
                         user_state,
                     )
-                    .await?;
+                    .await
+                    .context("failed to notify user, that card with this name not found")?;
                     return Ok(());
                 };
                 let tasks_list = tasks.values().collect::<Vec<_>>();
@@ -358,7 +373,7 @@ async fn handle_learned_course_interaction(
                     user.id,
                     "You should learn all dependencies before learning this card.",
                 )
-                .await?;
+                .await.context("failed to notify user, that he should learn all dependencies before learning this card")?;
                 return Ok(());
             }
             let (rcx, is_meaningful) =
@@ -371,7 +386,10 @@ async fn handle_learned_course_interaction(
             log_user_command(user, "graph");
             if !tail.is_empty() {
                 bot.send_message(user.id, "graph command doesn't expect any arguments.")
-                    .await?;
+                    .await
+                    .context(
+                        "failed to notify user, that graph command doesn't expect any arguments",
+                    )?;
                 return Ok(());
             }
             syncronize(user.id, course_id);
@@ -381,7 +399,8 @@ async fn handle_learned_course_interaction(
                     user.id,
                     format!("Course with id {} not found.", course_id.0),
                 )
-                .await?;
+                .await
+                .context("failed to notify user, that there is not course with this id")?;
                 return Ok(());
             };
             let mut graph = course.structure.generate_structure_graph();
@@ -410,10 +429,13 @@ async fn handle_learned_course_interaction(
                 )],
                 user_state,
             )
-            .await?;
+            .await
+            .context("failed to send graph image")?;
         }
         _ => {
-            handle_no_command(bot, user, message, user_state).await?;
+            handle_no_command(bot, user, message, user_state)
+                .await
+                .context("failed to handle 'no command'")?;
         }
     }
     Ok(())
@@ -437,14 +459,16 @@ async fn handle_owned_course_interaction(
             log_user_command(user, "exit");
             user_state.current_screen = Screen::Main;
             bot.send_message(user.id, "You are now in main menu.")
-                .await?;
+                .await
+                .context("failed to notify user, that he is now in main menu")?;
             send_help_message(bot, user, &user_state).await?;
         }
         "/preview" => {
             log_user_command(user, "preview");
             if tail.contains(" ") {
                 bot.send_message(user.id, "Error: Card name should not contain spaces.")
-                    .await?;
+                    .await
+                    .context("failed to notify user, that card name should not contain spaces")?;
                 return Ok(());
             }
             if tail.is_empty() {
@@ -452,7 +476,10 @@ async fn handle_owned_course_interaction(
                     user.id,
                     "Error: You should provide card name, you want to learn.",
                 )
-                .await?;
+                .await
+                .context(
+                    "failed to notify user, that he should provide card name to preview command",
+                )?;
                 return Ok(());
             }
             log::info!(
@@ -469,7 +496,8 @@ async fn handle_owned_course_interaction(
                         vec!["Card with this name not found".into()],
                         user_state,
                     )
-                    .await?;
+                    .await
+                    .context("failed to notify user, that there is no card with this name")?;
                     return Ok(());
                 };
                 interaction_types::card::random_task(tasks, rand::rng()).clone()
@@ -480,7 +508,10 @@ async fn handle_owned_course_interaction(
             log_user_command(user, "graph");
             if !tail.is_empty() {
                 bot.send_message(user.id, "graph command doesn't expect any arguments.")
-                    .await?;
+                    .await
+                    .context(
+                        "failed to notify user, that graph command doesn't have any arguments",
+                    )?;
                 return Ok(());
             }
 
@@ -489,7 +520,8 @@ async fn handle_owned_course_interaction(
                     user.id,
                     format!("Course with id {} not found.", course_id.0),
                 )
-                .await?;
+                .await
+                .context("failed to notify user, that there is no course with this id")?;
                 return Ok(());
             };
             let graph = course.structure.generate_structure_graph();
@@ -511,7 +543,8 @@ async fn handle_owned_course_interaction(
                 )],
                 user_state,
             )
-            .await?;
+            .await
+            .context("fialed to send graph image")?;
         }
         "/revise" => {
             // TODO
@@ -526,10 +559,15 @@ async fn handle_owned_course_interaction(
                     user.id,
                     "change_course_graph command doesn't expect any arguments.",
                 )
-                .await?;
+                .await
+                .context(
+                    "failed to notify user, that change_course_graph command doesn't arguments",
+                )?;
                 return Ok(());
             }
-            handle_changing_course_graph(bot, user_state, user.id, course_id).await?;
+            handle_changing_course_graph(bot, user_state, user.id, course_id)
+                .await
+                .context("failed to change course graph")?;
         }
         "/change_deque" => {
             log_user_command(user, "change_deque");
@@ -538,10 +576,15 @@ async fn handle_owned_course_interaction(
                     user.id,
                     "change_deque command doesn't expect any arguments.",
                 )
-                .await?;
+                .await
+                .context(
+                    "failed to notify user, that change_deque command doesn't have arguments",
+                )?;
                 return Ok(());
             }
-            handle_changing_deque(bot, user_state, user.id, course_id).await?;
+            handle_changing_deque(bot, user_state, user.id, course_id)
+                .await
+                .context("failed to change deque")?;
         }
         "/view_course_graph_source" => {
             log_user_command(user, "view_course_graph_source");
@@ -550,7 +593,7 @@ async fn handle_owned_course_interaction(
                     user.id,
                     "view_course_graph_source command doesn't expect any arguments.",
                 )
-                .await?;
+                .await.context("failed to notify user, that view_course_graph_source command doesn't have arguments")?;
                 return Ok(());
             }
             send_interactions(
@@ -566,7 +609,8 @@ async fn handle_owned_course_interaction(
                 ],
                 user_state,
             )
-            .await?;
+            .await
+            .context("failed to send course graph source")?;
         }
         "/view_deque_source" => {
             log_user_command(user, "view_deque_source");
@@ -575,7 +619,10 @@ async fn handle_owned_course_interaction(
                     user.id,
                     "view_deque_source command doesn't expect any arguments.",
                 )
-                .await?;
+                .await
+                .context(
+                    "failed to notify user, that view_deque_source command doesn't have arguments",
+                )?;
                 return Ok(());
             }
             send_interactions(
@@ -591,7 +638,8 @@ async fn handle_owned_course_interaction(
                 ],
                 user_state,
             )
-            .await?;
+            .await
+            .context("failed to send deque source")?;
         }
         "/view_course_errors" => {
             log_user_command(user, "view_course_errors");
@@ -600,7 +648,10 @@ async fn handle_owned_course_interaction(
                     user.id,
                     "view_course_errors command doesn't expect any arguments.",
                 )
-                .await?;
+                .await
+                .context(
+                    "failed to notify user, that view_ocurse_errors command doesn't have arguments",
+                )?;
                 return Ok(());
             }
             if let Some(errors) = db_get_course(course_id).unwrap().get_errors() {
@@ -609,13 +660,19 @@ async fn handle_owned_course_interaction(
                 for error in errors {
                     msgs.push(error.into());
                 }
-                send_interactions(bot, user.id, msgs, user_state).await?;
+                send_interactions(bot, user.id, msgs, user_state)
+                    .await
+                    .context("failed to send course errors")?;
             } else {
-                send_interactions(bot, user.id, vec!["No errors!".into()], user_state).await?;
+                send_interactions(bot, user.id, vec!["No errors!".into()], user_state)
+                    .await
+                    .context("failed to send, that course doesn't have any errors")?;
             }
         }
         _ => {
-            handle_no_command(bot, user, message, user_state).await?;
+            handle_no_command(bot, user, message, user_state)
+                .await
+                .context("failed to handle 'no command'")?;
         }
     }
     Ok(())
@@ -653,11 +710,15 @@ async fn handle_no_command(
                     .unwrap();
             }
             _ => {
-                bot.send_message(user.id, "Unexpected input").await?;
+                bot.send_message(user.id, "Unexpected input")
+                    .await
+                    .context("failed to notify user about unexpeceted input")?;
             }
         },
         None => {
-            bot.send_message(user.id, "Command not found!").await?;
+            bot.send_message(user.id, "Command not found!")
+                .await
+                .context("failed to send user, that this command doesn't exist")?;
         }
     };
     Ok(())

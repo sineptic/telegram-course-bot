@@ -34,7 +34,8 @@ async fn get_user_answer(
             .chain([TelegramInteraction::OneOf(answers)]),
         user_state,
     )
-    .await?;
+    .await
+    .context("failed to get user answer raw")?;
     Ok(answer.map(|mut x| x.pop().unwrap()))
 }
 async fn get_user_answer_raw(
@@ -45,7 +46,9 @@ async fn get_user_answer_raw(
 ) -> anyhow::Result<Option<Vec<String>>> {
     let interactions = interactions.into_iter().collect();
     let (tx, rx) = tokio::sync::oneshot::channel();
-    set_task_for_user(bot, user_id, interactions, tx, user_state).await?;
+    set_task_for_user(bot, user_id, interactions, tx, user_state)
+        .await
+        .context("failed to set task for user")?;
     let Ok(answer) = rx.await else {
         return Ok(None);
     };
@@ -86,11 +89,14 @@ pub async fn handle_changing_course_graph(
                 user_id,
                 format!("Course with id {} not found.", course_id.0),
             )
-            .await?;
+            .await
+            .context("failed to notify user, that there is no course with this id")?;
             return Ok(());
         };
         if course.owner_id != user_id {
-            bot.send_message(user_id, "It's not your course.").await?;
+            bot.send_message(user_id, "It's not your course.")
+                .await
+                .context("failed to warn user, that he can change only his own courses")?;
             return Ok(());
         }
         let course_graph = &course.structure;
@@ -122,7 +128,8 @@ pub async fn handle_changing_course_graph(
         ],
         user_state,
     )
-    .await?
+    .await
+    .context("failed to display current graph")?
     {
         assert_eq!(answer.len(), 6);
         #[allow(clippy::needless_range_loop)]
@@ -136,7 +143,9 @@ pub async fn handle_changing_course_graph(
                 let mut new_course = db_get_course(course_id).unwrap();
                 new_course.structure = new_course_graph;
                 db_set_course(course_id, new_course);
-                bot.send_message(user_id, "Course graph changed.").await?;
+                bot.send_message(user_id, "Course graph changed.")
+                    .await
+                    .context("failed to confirm course graph change")?;
             }
             Err(err) => {
                 let err = strip_ansi_escapes::strip_str(err);
@@ -144,7 +153,8 @@ pub async fn handle_changing_course_graph(
                     user_id,
                     format!("Your course graph has this errors:\n```\n{err}\n```"),
                 )
-                .await?;
+                .await
+                .context("failed to notify that course graph has errors")?;
             }
         }
     }
@@ -161,11 +171,14 @@ pub async fn handle_changing_deque(
             user_id,
             format!("Course with id {} not found.", course_id.0),
         )
-        .await?;
+        .await
+        .context("failed to responde to user, that course not found")?;
         return Ok(());
     };
     if course.owner_id != user_id {
-        bot.send_message(user_id, "It's not your course.").await?;
+        bot.send_message(user_id, "It's not your course.")
+            .await
+            .context("failed to warn user, that hi can change only his courses")?;
         return Ok(());
     }
     let source = course.tasks.source.clone();
@@ -181,7 +194,8 @@ pub async fn handle_changing_deque(
         ],
         user_state,
     )
-    .await?
+    .await
+    .context("failed to send current course tasks")?
     {
         assert_eq!(answer.len(), 4);
         #[allow(clippy::needless_range_loop)]
@@ -195,14 +209,17 @@ pub async fn handle_changing_deque(
                 let mut new_course = course;
                 new_course.tasks = new_deque;
                 db_set_course(course_id, new_course);
-                bot.send_message(user_id, "Deque changed.").await?;
+                bot.send_message(user_id, "Deque changed.")
+                    .await
+                    .context("failed to confirm, that deque is changed")?;
             }
             Err(err) => {
                 bot.send_message(
                     user_id,
                     format!("Your deque has this errors:\n```\n{err}\n```"),
                 )
-                .await?;
+                .await
+                .context("failed to notify user, that deque has errors")?;
             }
         }
     }
