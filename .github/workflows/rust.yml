@@ -12,9 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Use nightly version
-        run: rustup override set nightly
-          && rustup component add --toolchain nightly-x86_64-unknown-linux-gnu rustfmt clippy
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: cargo fmt --check
@@ -28,8 +25,6 @@ jobs:
       executable_id: ${{ steps.upload_executable.outputs.artifact-id }}
     steps:
       - uses: actions/checkout@v4
-      - name: Use nightly version
-        run: rustup override set nightly
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --release
