@@ -1,25 +1,44 @@
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use chumsky::{
     prelude::*,
     text::{newline, whitespace},
 };
+
 type Err<'a> = extra::Err<chumsky::error::Rich<'a, char>>;
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct CardName {
+    pub name: String,
+    pub span: SimpleSpan,
+}
+impl From<&str> for CardName {
+    fn from(value: &str) -> Self {
+        Self {
+            name: value.to_owned(),
+            span: SimpleSpan::new((), 0..1),
+        }
+    }
+}
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 struct CardPrototype {
-    name: String,
-    dependencies: Vec<String>,
+    name: CardName,
+    dependencies: Vec<CardName>,
 }
 
 impl CardPrototype {
     pub fn parser<'a>() -> impl Parser<'a, &'a str, CardPrototype, Err<'a>> {
-        fn ident<'a>() -> impl Parser<'a, &'a str, String, Err<'a>> {
+        fn ident<'a>() -> impl Parser<'a, &'a str, CardName, Err<'a>> {
             any()
                 .filter(|c: &char| c.is_alphanumeric())
                 .repeated()
                 .at_least(1)
                 .collect::<String>()
+                .map_with(|name, ctx| CardName {
+                    name,
+                    span: ctx.span(),
+                })
         }
         ident()
             .then(
@@ -42,43 +61,42 @@ impl CardPrototype {
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct DequePrototype {
-    pub cards: BTreeMap<String, Vec<String>>,
+    pub cards: HashMap<CardName, Vec<CardName>>,
 }
 impl DequePrototype {
     pub fn parser<'a>() -> impl Parser<'a, &'a str, DequePrototype, Err<'a>> {
         CardPrototype::parser()
-        .separated_by(newline())
-        .collect::<Vec<_>>()
-        .delimited_by(newline().repeated(), newline().repeated())
-        .try_map(|card_prototypes, span| {
-            let mut cards = BTreeMap::new();
-            for card_prototype in card_prototypes {
-                let prev = cards.insert(
-                    card_prototype.name.clone(),
-                    card_prototype.dependencies,
-                );
-                if prev.is_some() {
-                    return Err(Rich::custom(
-                        span,
-                        format!(
-                            "Card names should be unique, which is not true for '{}' card",
-                            card_prototype.name
-                        ),
-                    ));
+            .separated_by(newline())
+            .collect::<Vec<_>>()
+            .delimited_by(newline().repeated(), newline().repeated())
+            .try_map(|card_prototypes, span| {
+                let mut cards = HashMap::new();
+                for card_prototype in card_prototypes {
+                    let prev =
+                        cards.insert(card_prototype.name.clone(), card_prototype.dependencies);
+                    if prev.is_some() {
+                        return Err(Rich::custom(
+                            span,
+                            format!(
+                                "Card names should be unique, which is not true for '{}' card",
+                                card_prototype.name.name
+                            ),
+                        ));
+                    }
                 }
-            }
-            for dependencie in cards.values().flatten() {
-                if !cards.contains_key(dependencie) {
-                    return Err(Rich::custom(
-                        span,
-                        format!("Each dependencie should be presented as card, but '{dependencie}' isn't"),
-                    ));
+                for dependencie in cards.values().flatten() {
+                    if !cards.contains_key(dependencie) {
+                        return Err(Rich::custom(
+                            span,
+                            format!(
+                                "Each dependencie should be presented as card, but '{}' isn't",
+                                dependencie.name
+                            ),
+                        ));
+                    }
                 }
-            }
-            Ok(DequePrototype {
-                cards
+                Ok(DequePrototype { cards })
             })
-        })
     }
 }
 

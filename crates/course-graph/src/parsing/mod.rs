@@ -4,7 +4,7 @@ use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::{Parser, error::Rich, span::Span};
 use prototypes::DequePrototype;
 
-use crate::{card::CardNode, graph::CourseGraph};
+use crate::{card::CardNode, graph::CourseGraph, parsing::prototypes::CardName};
 
 mod prototypes;
 
@@ -20,7 +20,7 @@ impl FromStr for CourseGraph {
             return Err(String::from_utf8(errors).unwrap());
         }
         let mut card_prototypes = deque_prototype.unwrap().cards;
-        let mut graph_cards = HashMap::<String, CardNode>::new();
+        let mut graph_cards = HashMap::<CardName, CardNode>::new();
         while !card_prototypes.is_empty() {
             let Some((name, _)) = card_prototypes
                 .iter()
@@ -34,8 +34,9 @@ impl FromStr for CourseGraph {
                     .get_mut(dependencie)
                     .unwrap()
                     .dependents
-                    .push(name.clone());
+                    .push(name.name.clone());
             }
+            let dependencies = dependencies.into_iter().map(|x| x.name).collect();
             // Safety: there is no cycles, because all dependencies already added, which don't have cycles
             graph_cards.insert(
                 name,
@@ -45,6 +46,10 @@ impl FromStr for CourseGraph {
                 },
             );
         }
+        let graph_cards = graph_cards
+            .into_iter()
+            .map(|(key, value)| (key.name, value))
+            .collect();
         Ok(CourseGraph {
             text: s.to_owned(),
             cards: graph_cards,
