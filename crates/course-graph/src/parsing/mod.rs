@@ -1,7 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::prelude::*;
+use chumsky::{Parser, error::Rich, span::Span};
 use prototypes::DequePrototype;
 
 use crate::{card::CardNode, graph::CourseGraph};

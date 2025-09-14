@@ -108,10 +108,10 @@ pub async fn handle_changing_course_graph(
                 &mut graphviz_rust::printer::PrinterContext::default(),
                 vec![graphviz_rust::cmd::Format::Jpeg.into()],
             )
-            .context("Failed to run 'dot'")
+            .expect("Failed to run 'dot'")
         })
         .await
-        .unwrap()?;
+        .unwrap();
         (source, printed_graph)
     };
 

@@ -67,7 +67,7 @@ fn generate_edge_stmts(first: &str, second: &str) -> impl Iterator<Item = Stmt> 
 fn node_stmt(name: &str) -> Stmt {
     Stmt::Node(Node {
         id: NodeId(id_from_string(name), None),
-        attributes: vec![NodeAttributes::label(name.to_owned())],
+        attributes: vec![NodeAttributes::label(format!("\"{name}\""))],
     })
 }
 

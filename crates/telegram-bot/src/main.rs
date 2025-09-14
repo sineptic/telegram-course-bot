@@ -6,7 +6,10 @@ use course_graph::{
     progress_store::{TaskProgress, TaskProgressStoreExt},
 };
 use dashmap::DashMap;
-use graphviz_rust::{cmd::Format, printer::PrinterContext};
+use graphviz_rust::{
+    cmd::Format,
+    printer::{DotPrinter, PrinterContext},
+};
 use teloxide_core::{
     RequestError,
     payloads::SendMessageSetters,
@@ -422,10 +425,10 @@ async fn handle_learned_course_interaction(
                             &mut PrinterContext::default(),
                             Vec::from([Format::Jpeg.into()]),
                         )
-                        .context("Failed to run 'dot'")
+                        .expect("Failed to run 'dot'")
                     })
                     .await
-                    .unwrap()?,
+                    .unwrap(),
                 )],
                 user_state,
             )
@@ -532,14 +535,21 @@ async fn handle_owned_course_interaction(
                 [TelegramInteraction::PersonalImage(
                     tokio::task::spawn_blocking(move || {
                         graphviz_rust::exec(
-                            graph,
+                            graph.clone(),
                             &mut PrinterContext::default(),
                             Vec::from([Format::Jpeg.into()]),
                         )
-                        .context("Failed to run 'dot'")
+                        .unwrap_or_else(|err| {
+                            log::error!(
+                                "Failed to run dot with this source: \n`{}`\n, because of this error: {err}",
+                                graph.print(&mut PrinterContext::default())
+                                // course.structure.get_source()
+                            );
+                            panic!("Failed to run 'dot'");
+                        })
                     })
                     .await
-                    .unwrap()?,
+                    .unwrap(),
                 )],
                 user_state,
             )
