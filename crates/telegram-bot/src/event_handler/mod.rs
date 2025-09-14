@@ -6,7 +6,12 @@ use course_graph::graph::CourseGraph;
 use dashmap::DashMap;
 use rand::seq::SliceRandom;
 use ssr_algorithms::fsrs::level::{Quality, RepetitionContext};
-use teloxide_core::{Bot, prelude::Requester, types::UserId};
+use teloxide_core::{
+    Bot,
+    payloads::SendMessageSetters,
+    prelude::Requester,
+    types::{ParseMode, UserId},
+};
 
 use crate::{
     database::*,
@@ -153,6 +158,7 @@ pub async fn handle_changing_course_graph(
                     user_id,
                     format!("Your course graph has this errors:\n```\n{err}\n```"),
                 )
+                .parse_mode(ParseMode::MarkdownV2)
                 .await
                 .context("failed to notify that course graph has errors")?;
             }
