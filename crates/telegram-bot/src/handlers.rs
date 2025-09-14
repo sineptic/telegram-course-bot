@@ -159,10 +159,16 @@ pub async fn progress_on_user_event(
                 break;
             }
             TelegramInteraction::Text(text) => {
-                bot.send_message(user_id, text.replace('.', r#"\."#).replace('!', r#"\!"#))
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .await
-                    .context("failed to send text message to user")?;
+                bot.send_message(
+                    user_id,
+                    text.replace('.', r#"\."#)
+                        .replace('!', r#"\!"#)
+                        .replace("(", r#"\("#)
+                        .replace(")", r#"\)"#),
+                )
+                .parse_mode(ParseMode::MarkdownV2)
+                .await
+                .context("failed to send text message to user")?;
                 *current += 1;
                 answers.push(String::new());
             }
