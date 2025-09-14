@@ -225,13 +225,13 @@ impl Course {
             .cards()
             .keys()
             .filter(|&id| !deque.tasks.contains_key(id))
-            .map(|id| format!("Graph has '{id}' card, but deque(cards.md) doesn't."))
+            .map(|id| format!("Graph has '{id}' card, but deque doesn't."))
             .for_each(|item| errors.push(item));
         deque
             .tasks
             .keys()
             .filter(|x| !CourseGraph::default().cards().contains_key(*x))
-            .map(|err| format!("Deque(cards.md) has '{err}', but graph doesn't."))
+            .map(|err| format!("Deque has '{err}', but graph doesn't."))
             .for_each(|item| {
                 errors.push(item);
             });

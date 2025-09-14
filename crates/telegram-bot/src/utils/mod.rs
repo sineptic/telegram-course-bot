@@ -1,5 +1,6 @@
 use std::{ops::Deref, panic::Location};
 
+
 #[macro_export]
 macro_rules! check {
     ( $condition:expr, $error:expr ) => {

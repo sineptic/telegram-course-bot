@@ -11,20 +11,21 @@ pub async fn send_interactions(
     bot: Bot,
     user_id: UserId,
     interactions: impl IntoIterator<Item = TelegramInteraction>,
-    user_state: MutUserState<'_>,
+    mut user_state: MutUserState<'_>,
 ) -> anyhow::Result<()> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    tokio::spawn(async {
-        let _ = rx.await;
+    user_state.current_interaction = Some(UserInteraction {
+        interactions: interactions.into_iter().collect(),
+        current: 0,
+        current_id: rand::random(),
+        current_message: None,
+        answers: Vec::new(),
+        channel: None,
     });
-    set_task_for_user(
-        bot,
-        user_id,
-        interactions.into_iter().collect(),
-        tx,
-        user_state,
-    )
-    .await
+
+    progress_on_user_event(bot, user_id, &mut user_state.current_interaction)
+        .await
+        .context("failed to send interactions")?;
+    Ok(())
 }
 
 pub async fn set_task_for_user(
@@ -135,7 +136,9 @@ pub async fn progress_on_user_event(
     };
     loop {
         if *current >= interactions.len() {
-            channel.take().unwrap().send(answers.clone()).unwrap();
+            if let Some(channel) = channel.take() {
+                channel.send(answers.clone()).unwrap();
+            }
             *current_user_interaction = None;
             break;
         }
