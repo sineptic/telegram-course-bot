@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
 
-use chumsky::{prelude::*, text::Char};
+use chumsky::{
+    prelude::*,
+    text::{newline, whitespace},
+};
 type Err<'a> = extra::Err<chumsky::error::Rich<'a, char>>;
 
 #[cfg_attr(test, derive(Debug, PartialEq))]
@@ -12,26 +15,22 @@ struct CardPrototype {
 impl CardPrototype {
     pub fn parser<'a>() -> impl Parser<'a, &'a str, CardPrototype, Err<'a>> {
         fn ident<'a>() -> impl Parser<'a, &'a str, String, Err<'a>> {
-            none_of(":")
-            .filter(|c: &char| c.is_alphanumeric() || c.is_inline_whitespace())
-            .repeated()
-            .at_least(1)
-            .to_slice()
-            .try_map(|x: &str, span| {
-                let x = x.to_lowercase();
-                if x.starts_with(" ") || x.ends_with(" ") {
-                    return Err(Rich::custom(span, "Card name should containt whitespaces only inside, not at start or end"));
-                }
-                if x == "finish" {
-                    return Err(Rich::custom(span, "Card shouldn't be named 'finish'"));
-                }
-                Ok(x)
-            })
+            any()
+                .filter(|c: &char| c.is_alphanumeric())
+                .repeated()
+                .at_least(1)
+                .collect::<String>()
         }
         ident()
             .then(
                 just(": ")
-                    .ignore_then(ident().separated_by(just(", ")).at_least(1).collect())
+                    .ignore_then(
+                        ident()
+                            .delimited_by(whitespace(), whitespace())
+                            .separated_by(just(", "))
+                            .at_least(1)
+                            .collect(),
+                    )
                     .or_not(),
             )
             .map(|(name, dependencies)| CardPrototype {
@@ -48,9 +47,9 @@ pub struct DequePrototype {
 impl DequePrototype {
     pub fn parser<'a>() -> impl Parser<'a, &'a str, DequePrototype, Err<'a>> {
         CardPrototype::parser()
-        .separated_by(just("\n").repeated().at_least(1))
+        .separated_by(newline())
         .collect::<Vec<_>>()
-        .delimited_by(just("\n").repeated(), just("\n").repeated())
+        .delimited_by(newline().repeated(), newline().repeated())
         .try_map(|card_prototypes, span| {
             let mut cards = BTreeMap::new();
             for card_prototype in card_prototypes {
