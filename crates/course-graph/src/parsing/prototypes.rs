@@ -42,7 +42,6 @@ impl FromStr for DequePrototype {
     type Err = chumsky::error::Rich<'static, char>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut cards = HashMap::new();
         enum State {
             Default,
             NameParsing {
@@ -60,30 +59,27 @@ impl FromStr for DequePrototype {
                 current_dependency_start: usize,
             },
         }
-        let mut state = State::Default;
-        for (ix, ch) in s.char_indices() {
+        fn process_char(
+            state: State,
+            cards: &mut HashMap<CardName, Vec<CardName>>,
+            ch: char,
+            ix: usize,
+        ) -> Result<State, chumsky::error::Rich<'static, char>> {
             match state {
                 State::Default => match ch {
-                    '\n' => (),
-                    ch if ch.is_alphanumeric() => {
-                        state = State::NameParsing {
-                            name: String::from(ch),
-                            start: ix,
-                        }
-                    }
-                    _ => {
-                        return Err(Rich::custom(
-                            SimpleSpan::from(ix..ix + 1),
-                            "unexpected character, card name expected",
-                        ));
-                    }
+                    '\n' => Ok(State::Default),
+                    ch if ch.is_alphanumeric() => Ok(State::NameParsing {
+                        name: String::from(ch),
+                        start: ix,
+                    }),
+                    _ => Err(Rich::custom(
+                        SimpleSpan::from(ix..ix + 1),
+                        "unexpected character, card name expected",
+                    )),
                 },
-                State::NameParsing {
-                    ref mut name,
-                    start,
-                } => match ch {
+                State::NameParsing { mut name, start } => match ch {
                     '\n' => {
-                        let name = CardName::new(name, start, ix);
+                        let name = CardName::new(&name, start, ix);
                         let prev = cards.insert(name.clone(), Vec::new());
                         if prev.is_some() {
                             return Err(Rich::custom(
@@ -91,10 +87,11 @@ impl FromStr for DequePrototype {
                                 "duplicate definition of card dependencies",
                             ));
                         }
-                        state = State::Default;
+                        Ok(State::Default)
                     }
                     ch if ch.is_alphanumeric() || ch == ' ' => {
                         name.push(ch);
+                        Ok(State::NameParsing { name, start })
                     }
                     ':' => {
                         if name.ends_with(' ') {
@@ -105,43 +102,33 @@ impl FromStr for DequePrototype {
                                 "space in not allowed between card name and column",
                             ));
                         }
-                        let name = CardName::new(name, start, ix);
-                        state = State::DependenciesParsing {
+                        let name = CardName::new(&name, start, ix);
+                        Ok(State::DependenciesParsing {
                             name,
                             dependencies: Vec::new(),
-                        };
+                        })
                     }
-                    _ => {
-                        return Err(Rich::custom(
-                            SimpleSpan::from(ix..ix + 1),
-                            "unexpected character, expected card name continuation or column",
-                        ));
-                    }
+                    _ => Err(Rich::custom(
+                        SimpleSpan::from(ix..ix + 1),
+                        "unexpected character, expected card name continuation or column",
+                    )),
                 },
                 State::DependenciesParsing { name, dependencies } => match ch {
-                    ' ' => {
-                        state = State::DependenciesParsing { name, dependencies };
-                    }
-                    ch if ch.is_alphanumeric() => {
-                        state = State::DependencyParsing {
-                            name,
-                            dependencies,
-                            current_dependency: String::from(ch),
-                            current_dependency_start: ix,
-                        };
-                    }
-                    '\n' => {
-                        return Err(Rich::custom(
-                            SimpleSpan::from(name.span.start..ix),
-                            "dependency name expected",
-                        ));
-                    }
-                    _ => {
-                        return Err(Rich::custom(
-                            SimpleSpan::from(ix..ix + 1),
-                            "unexpected character",
-                        ));
-                    }
+                    ' ' => Ok(State::DependenciesParsing { name, dependencies }),
+                    ch if ch.is_alphanumeric() => Ok(State::DependencyParsing {
+                        name,
+                        dependencies,
+                        current_dependency: String::from(ch),
+                        current_dependency_start: ix,
+                    }),
+                    '\n' => Err(Rich::custom(
+                        SimpleSpan::from(name.span.start..ix),
+                        "dependency name expected",
+                    )),
+                    _ => Err(Rich::custom(
+                        SimpleSpan::from(ix..ix + 1),
+                        "unexpected character",
+                    )),
                 },
                 State::DependencyParsing {
                     name,
@@ -167,16 +154,16 @@ impl FromStr for DequePrototype {
                                 "duplicate definition of card dependencies",
                             ));
                         }
-                        state = State::Default;
+                        Ok(State::Default)
                     }
                     ch if ch.is_alphanumeric() || ch == ' ' => {
                         current_dependency.push(ch);
-                        state = State::DependencyParsing {
+                        Ok(State::DependencyParsing {
                             name,
                             dependencies,
                             current_dependency,
                             current_dependency_start,
-                        };
+                        })
                     }
                     ',' => {
                         if current_dependency.ends_with(' ') {
@@ -197,62 +184,22 @@ impl FromStr for DequePrototype {
                             ));
                         }
                         dependencies.push(dependency);
-                        state = State::DependenciesParsing { name, dependencies };
+                        Ok(State::DependenciesParsing { name, dependencies })
                     }
-                    _ => {
-                        return Err(Rich::custom(
-                            SimpleSpan::from(ix..ix + 1),
-                            "unexpected character",
-                        ));
-                    }
+                    _ => Err(Rich::custom(
+                        SimpleSpan::from(ix..ix + 1),
+                        "unexpected character",
+                    )),
                 },
             }
         }
-        match state {
-            State::Default => (),
-            State::NameParsing { name, start } => {
-                let name = CardName::new(&name, start, s.len());
-                let prev = cards.insert(name.clone(), Vec::new());
-                if prev.is_some() {
-                    return Err(Rich::custom(
-                        name.span,
-                        "duplicate definition of card dependencies",
-                    ));
-                }
-            }
-            State::DependenciesParsing {
-                name,
-                dependencies: _,
-            } => {
-                return Err(Rich::custom(
-                    SimpleSpan::from(name.span.start..s.len()),
-                    "dependency name expected",
-                ));
-            }
-            State::DependencyParsing {
-                name,
-                mut dependencies,
-                mut current_dependency,
-                current_dependency_start,
-            } => {
-                let spaces_at_the_end =
-                    current_dependency.len() - current_dependency.trim_end().len();
-                let _ = current_dependency.split_off(current_dependency.len() - spaces_at_the_end);
-                let dependency = CardName::new(
-                    &current_dependency,
-                    current_dependency_start,
-                    s.len() - spaces_at_the_end,
-                );
-                dependencies.push(dependency);
-                let prev = cards.insert(name.clone(), dependencies);
-                if prev.is_some() {
-                    return Err(Rich::custom(
-                        name.span,
-                        "duplicate definition of card dependencies",
-                    ));
-                }
-            }
+        let mut cards = HashMap::new();
+        let mut state = State::Default;
+        for (ix, ch) in s.char_indices() {
+            state = process_char(state, &mut cards, ch, ix)?;
         }
+        let last_state = process_char(state, &mut cards, '\n', s.len())?;
+        assert!(matches!(last_state, State::Default));
         Ok(Self { cards })
     }
 }
