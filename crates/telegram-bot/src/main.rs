@@ -27,7 +27,7 @@ use database::*;
 
 use crate::{
     event_handler::{
-        complete_card, handle_changing_course_graph, handle_changing_deque, syncronize,
+        complete_card, handle_changing_course_graph, handle_changing_deque, synchronize,
     },
     handlers::{callback_handler, progress_on_user_event, send_interactions},
     interaction_types::{TelegramInteraction, deque::Deque},
@@ -339,7 +339,7 @@ async fn handle_learned_course_interaction(
                 user.id
             );
 
-            syncronize(user.id, course_id);
+            synchronize(user.id, course_id);
             let task = {
                 let course = db_get_course(course_id).unwrap();
                 let Some(tasks) = course.tasks.tasks.get(card_name) else {
@@ -395,7 +395,7 @@ async fn handle_learned_course_interaction(
                     )?;
                 return Ok(());
             }
-            syncronize(user.id, course_id);
+            synchronize(user.id, course_id);
 
             let Some(course) = db_get_course(course_id) else {
                 bot.send_message(

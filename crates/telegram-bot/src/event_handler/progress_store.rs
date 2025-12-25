@@ -16,7 +16,7 @@ pub struct Task {
     pub(crate) meaningful_repetitions: u32,
 }
 impl Task {
-    fn syncronize(&mut self, fsrs: &FSRS, retrievability_goal: f32, now: SystemTime) {
+    fn synchronize(&mut self, fsrs: &FSRS, retrievability_goal: f32, now: SystemTime) {
         let next_repetition = self.level.next_repetition(fsrs, retrievability_goal as f64);
         let time_to_repeat = next_repetition < now;
         match self.progress {
@@ -96,10 +96,10 @@ impl Default for UserProgress {
     }
 }
 impl UserProgress {
-    pub fn syncronize(&mut self, now: SystemTime) {
+    pub fn synchronize(&mut self, now: SystemTime) {
         let fsrs = self.weights.fsrs();
         self.tasks.values_mut().for_each(|t| {
-            t.syncronize(&fsrs, self.desired_retention, now);
+            t.synchronize(&fsrs, self.desired_retention, now);
         });
     }
     pub fn repetition(

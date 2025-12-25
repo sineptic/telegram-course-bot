@@ -232,9 +232,9 @@ pub async fn handle_changing_deque(
     Ok(())
 }
 
-pub fn syncronize(user_id: UserId, course_id: CourseId) {
+pub fn synchronize(user_id: UserId, course_id: CourseId) {
     let mut progress = db_get_progress(user_id, course_id);
-    progress.syncronize(now().into());
+    progress.synchronize(now().into());
     db_get_course(course_id)
         .unwrap()
         .structure
