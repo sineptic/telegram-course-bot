@@ -178,7 +178,7 @@ pub async fn handle_changing_deque(
             format!("Course with id {} not found.", course_id.0),
         )
         .await
-        .context("failed to responde to user, that course not found")?;
+        .context("failed to respond to user, that course not found")?;
         return Ok(());
     };
     if course.owner_id != user_id {

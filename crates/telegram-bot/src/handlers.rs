@@ -61,7 +61,7 @@ pub async fn callback_handler(
     }
     let user_id = q.from.id;
     let Some(response) = q.data else {
-        log::error!("reponse data should be assigned");
+        log::error!("response data should be assigned");
         return Ok(());
     };
 

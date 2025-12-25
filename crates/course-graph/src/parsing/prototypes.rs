@@ -21,7 +21,8 @@ impl From<&str> for CardName {
     }
 }
 
-#[cfg_attr(test, derive(Debug, PartialEq))]
+#[cfg_attr(test, derive(PartialEq))]
+#[derive(Debug)]
 struct CardPrototype {
     name: CardName,
     dependencies: Vec<CardName>,
@@ -70,6 +71,7 @@ impl DequePrototype {
             .collect::<Vec<_>>()
             .delimited_by(newline().repeated(), newline().repeated())
             .try_map(|card_prototypes, span| {
+                dbg!(&card_prototypes);
                 let mut cards = HashMap::new();
                 for card_prototype in card_prototypes {
                     let prev =
@@ -84,13 +86,14 @@ impl DequePrototype {
                         ));
                     }
                 }
-                for dependencie in cards.values().flatten() {
-                    if !cards.contains_key(dependencie) {
+                for dependency in cards.values().flatten() {
+                    dbg!(&cards);
+                    if !cards.contains_key(dependency) {
                         return Err(Rich::custom(
                             span,
                             format!(
-                                "Each dependencie should be presented as card, but '{}' isn't",
-                                dependencie.name
+                                "Each dependency should be presented as card, but '{}' isn't",
+                                dependency.name
                             ),
                         ));
                     }

@@ -560,7 +560,7 @@ async fn handle_owned_course_interaction(
                 user_state,
             )
             .await
-            .context("fialed to send graph image")?;
+            .context("failed to send graph image")?;
         }
         "/revise" => {
             // TODO

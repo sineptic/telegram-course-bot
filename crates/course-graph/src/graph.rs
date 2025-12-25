@@ -35,8 +35,8 @@ impl CourseGraph {
                     .iter()
                     .filter(|(_, card)| card.dependents.is_empty())
                     .map(|(x, _)| x)
-                    .flat_map(|top_level_dependencie| {
-                        generate_edge_stmts("Finish", top_level_dependencie)
+                    .flat_map(|top_level_dependency| {
+                        generate_edge_stmts("Finish", top_level_dependency)
                     }),
             )
     }

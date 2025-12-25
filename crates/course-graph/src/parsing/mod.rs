@@ -29,9 +29,9 @@ impl FromStr for CourseGraph {
                 todo!("report cycle detection")
             };
             let (name, dependencies) = card_prototypes.remove_entry(&name.to_owned()).unwrap();
-            for dependencie in &dependencies {
+            for dependency in &dependencies {
                 graph_cards
-                    .get_mut(dependencie)
+                    .get_mut(dependency)
                     .unwrap()
                     .dependents
                     .push(name.name.clone());
