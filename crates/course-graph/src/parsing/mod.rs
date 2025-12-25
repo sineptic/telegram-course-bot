@@ -1,7 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
-use chumsky::{Parser, error::Rich, span::Span};
+use chumsky::{error::Rich, span::Span};
 use prototypes::DequePrototype;
 
 use crate::{card::CardNode, graph::CourseGraph, parsing::prototypes::CardName};
@@ -11,12 +11,10 @@ mod prototypes;
 impl FromStr for CourseGraph {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let deque_prototype = DequePrototype::parser().parse(s);
-        if deque_prototype.has_errors() {
+        let deque_prototype = DequePrototype::from_str(s);
+        if let Err(err) = deque_prototype {
             let mut errors = Vec::new();
-            for err in deque_prototype.errors() {
-                report_error(s, &mut errors, err);
-            }
+            report_error(s, &mut errors, &err);
             return Err(String::from_utf8(errors).unwrap());
         }
         let mut card_prototypes = deque_prototype.unwrap().cards;
@@ -26,7 +24,9 @@ impl FromStr for CourseGraph {
                 .iter()
                 .find(|(_, dependencies)| dependencies.iter().all(|d| graph_cards.contains_key(d)))
             else {
-                todo!("report cycle detection")
+                todo!(
+                    "report cycle detection or dangling dependency(without it's own dependencies specified)"
+                )
             };
             let (name, dependencies) = card_prototypes.remove_entry(&name.to_owned()).unwrap();
             for dependency in &dependencies {
