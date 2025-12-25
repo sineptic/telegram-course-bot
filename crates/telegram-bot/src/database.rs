@@ -188,7 +188,7 @@ pub fn db_add_course_to_user(user_id: UserId, course_id: CourseId) {
     if course.owner_id != user_id {
         let default_progress = serde_json::to_string(&course.default_user_progress()).unwrap();
         tr.execute(
-            "INSERT INTO user_progress (user_id, course_id, progress) VALUE (?, ?, ?)",
+            "INSERT OR IGNORE INTO user_progress (user_id, course_id, progress) VALUE (?, ?, ?)",
             (user_id.0, course_id.0, default_progress),
         )
         .unwrap();

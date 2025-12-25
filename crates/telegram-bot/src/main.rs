@@ -260,6 +260,12 @@ async fn handle_main_menu_interaction(
             }
             user_state.current_screen = Screen::Course(course_id);
             db_add_course_to_user(user.id, course_id);
+            log::info!(
+                "initialized course {} for user {}({})",
+                course_id.0,
+                user.username.clone().unwrap_or("<unknown>".into()),
+                user.id
+            );
             bot.send_message(user.id, "You are now in course menu.")
                 .await
                 .context("failed to notify user, that he is now in course menu")?;
