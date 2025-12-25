@@ -29,7 +29,7 @@ use crate::{
     event_handler::{
         complete_card, handle_changing_course_graph, handle_changing_deque, synchronize,
     },
-    handlers::{callback_handler, progress_on_user_event, send_interactions},
+    handlers::{callback_handler, progress_on_user_event, send_interactions, send_markdown},
     interaction_types::{TelegramInteraction, deque::Deque},
     state::*,
     utils::ResultExt,
@@ -260,12 +260,6 @@ async fn handle_main_menu_interaction(
             }
             user_state.current_screen = Screen::Course(course_id);
             db_add_course_to_user(user.id, course_id);
-            log::info!(
-                "initialized course {} for user {}({})",
-                course_id.0,
-                user.username.clone().unwrap_or("<unknown>".into()),
-                user.id
-            );
             bot.send_message(user.id, "You are now in course menu.")
                 .await
                 .context("failed to notify user, that he is now in course menu")?;
@@ -670,19 +664,19 @@ async fn handle_owned_course_interaction(
                 )?;
                 return Ok(());
             }
-            if let Some(errors) = db_get_course(course_id).unwrap().get_errors() {
-                let mut msgs = Vec::new();
-                msgs.push("Errors:".into());
-                for error in errors {
-                    msgs.push(error.into());
+            match generate_message_about_course_errors(course_id) {
+                Some(msgs) => {
+                    for msg in msgs {
+                        send_markdown(&bot, user.id, &msg)
+                            .await
+                            .context("failed to send course errors")?;
+                    }
                 }
-                send_interactions(bot, user.id, msgs, user_state)
-                    .await
-                    .context("failed to send course errors")?;
-            } else {
-                send_interactions(bot, user.id, vec!["No errors!".into()], user_state)
-                    .await
-                    .context("failed to send, that course doesn't have any errors")?;
+                None => {
+                    bot.send_message(user.id, "No errors!")
+                        .await
+                        .context("failed to send, that course doesn't have any errors")?;
+                }
             }
         }
         _ => {
@@ -692,6 +686,19 @@ async fn handle_owned_course_interaction(
         }
     }
     Ok(())
+}
+
+fn generate_message_about_course_errors(course_id: CourseId) -> Option<Vec<String>> {
+    if let Some(errors) = db_get_course(course_id).unwrap().get_errors() {
+        let mut msgs = Vec::new();
+        msgs.push("Errors:".into());
+        for error in errors {
+            msgs.push(error);
+        }
+        Some(msgs)
+    } else {
+        None
+    }
 }
 
 async fn handle_no_command(

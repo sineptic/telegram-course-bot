@@ -162,16 +162,9 @@ pub async fn progress_on_user_event(
                 break;
             }
             TelegramInteraction::Text(text) => {
-                bot.send_message(
-                    user_id,
-                    text.replace('.', r#"\."#)
-                        .replace('!', r#"\!"#)
-                        .replace("(", r#"\("#)
-                        .replace(")", r#"\)"#),
-                )
-                .parse_mode(ParseMode::MarkdownV2)
-                .await
-                .context("failed to send text message to user")?;
+                send_markdown(&bot, user_id, text)
+                    .await
+                    .context("failed to send text message to user")?;
                 *current += 1;
                 answers.push(String::new());
             }
@@ -202,5 +195,18 @@ pub async fn progress_on_user_event(
             }
         }
     }
+    Ok(())
+}
+
+pub fn escape_telegram_message(text: &str) -> String {
+    text.replace('.', r#"\."#)
+        .replace('!', r#"\!"#)
+        .replace("(", r#"\("#)
+        .replace(")", r#"\)"#)
+}
+pub async fn send_markdown(bot: &Bot, user_id: UserId, text: &str) -> anyhow::Result<()> {
+    bot.send_message(user_id, escape_telegram_message(text))
+        .parse_mode(ParseMode::MarkdownV2)
+        .await?;
     Ok(())
 }

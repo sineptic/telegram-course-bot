@@ -192,6 +192,7 @@ pub fn db_add_course_to_user(user_id: UserId, course_id: CourseId) {
             (user_id.0, course_id.0, default_progress),
         )
         .unwrap();
+        log::info!("initialized course {} for user ({})", course_id.0, user_id);
     }
     tr.commit().unwrap();
 }

@@ -122,7 +122,7 @@ impl FromStr for DequePrototype {
                         current_dependency_start: ix,
                     }),
                     '\n' => Err(Rich::custom(
-                        SimpleSpan::from(name.span.start..ix),
+                        SimpleSpan::from(ix..ix + 1),
                         "dependency name expected",
                     )),
                     _ => Err(Rich::custom(

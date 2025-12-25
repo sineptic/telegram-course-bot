@@ -15,7 +15,7 @@ use teloxide_core::{
 
 use crate::{
     database::*,
-    handlers::{send_interactions, set_task_for_user},
+    handlers::{send_interactions, send_markdown, set_task_for_user},
     interaction_types::{telegram_interaction::QuestionElement, *},
     state::{MutUserState, UserState},
     utils::{Immutable, ResultExt},
@@ -164,6 +164,13 @@ pub async fn handle_changing_course_graph(
             }
         }
     }
+    if let Some(msgs) = super::generate_message_about_course_errors(course_id) {
+        for msg in msgs {
+            send_markdown(&bot, user_id, &msg)
+                .await
+                .context("failed to send course errors")?;
+        }
+    }
     Ok(())
 }
 pub async fn handle_changing_deque(
@@ -227,6 +234,13 @@ pub async fn handle_changing_deque(
                 .await
                 .context("failed to notify user, that deque has errors")?;
             }
+        }
+    }
+    if let Some(msgs) = super::generate_message_about_course_errors(course_id) {
+        for msg in msgs {
+            send_markdown(&bot, user_id, &msg)
+                .await
+                .context("failed to send course errors")?;
         }
     }
     Ok(())

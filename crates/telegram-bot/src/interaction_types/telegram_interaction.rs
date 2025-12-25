@@ -3,7 +3,6 @@ use url::Url;
 use super::task::TaskParseError;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum TelegramInteraction {
     OneOf(Vec<String>),
     Text(String),
